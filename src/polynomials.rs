@@ -1,0 +1,413 @@
+//! Univariate polynomials with coefficients in an arbitrary [`Ring`].
+//!
+//! `R[x]` is itself a ring, so this module provides the [`PolynomialRing`]
+//! value-domain handle and the [`Polynomial`] element type, mirroring the
+//! [`crate::structures::QuotientRing`] pattern.
+
+use crate::structures::{
+    AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Ring, SemiRing,
+    Semigroup, Set,
+};
+use std::fmt;
+use std::ops::{Add, Mul, Sub};
+use std::rc::Rc;
+
+/// The polynomial ring `R[x]` over a coefficient ring `R`.
+#[derive(Debug, Clone)]
+pub struct PolynomialRing<R: Ring>
+where
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    coeff_ring: R,
+}
+
+/// A polynomial with coefficients in `R`, stored in increasing-degree order
+/// (constant term first).
+///
+/// Invariant: the coefficient vector has no trailing zeros — the zero polynomial
+/// is the empty vector. Equality is structural over the coefficient vector.
+#[derive(Debug, Clone)]
+pub struct Polynomial<R: Ring>
+where
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    coefficients: Vec<R::E>,
+    ring: Rc<PolynomialRing<R>>,
+}
+
+impl<R> PolynomialRing<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    /// Construct `R[x]`, wrapped in an [`Rc`] so polynomials can share the ring handle.
+    pub fn new(coeff_ring: R) -> Rc<Self> {
+        Rc::new(PolynomialRing { coeff_ring })
+    }
+
+    /// The underlying coefficient ring.
+    pub fn coefficient_ring(&self) -> &R {
+        &self.coeff_ring
+    }
+}
+
+impl<R> Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    /// Build a polynomial from coefficients (constant term first). Trailing zeros
+    /// are trimmed to keep the canonical form.
+    pub fn new(ring: &Rc<PolynomialRing<R>>, mut coefficients: Vec<R::E>) -> Self {
+        let zero = ring.coeff_ring.zero();
+        while coefficients.last() == Some(&zero) {
+            coefficients.pop();
+        }
+        Polynomial {
+            coefficients,
+            ring: Rc::clone(ring),
+        }
+    }
+
+    /// Degree of the polynomial, or `None` for the zero polynomial.
+    pub fn degree(&self) -> Option<usize> {
+        if self.coefficients.is_empty() {
+            None
+        } else {
+            Some(self.coefficients.len() - 1)
+        }
+    }
+
+    /// Coefficients in increasing-degree order.
+    pub fn coefficients(&self) -> &[R::E] {
+        &self.coefficients
+    }
+}
+
+impl<R> PartialEq for Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &other.ring),
+            "Polynomial operands belong to different rings"
+        );
+        self.coefficients == other.coefficients
+    }
+}
+
+impl<R> Eq for Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+}
+
+impl<R> Add for Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "Polynomial operands belong to different rings"
+        );
+        let mut a = self.coefficients.into_iter();
+        let mut b = rhs.coefficients.into_iter();
+        let mut result = Vec::new();
+        loop {
+            match (a.next(), b.next()) {
+                (Some(x), Some(y)) => result.push(x + y),
+                (Some(x), None) | (None, Some(x)) => result.push(x),
+                (None, None) => break,
+            }
+        }
+        Polynomial::new(&self.ring, result)
+    }
+}
+
+impl<R> Sub for Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "Polynomial operands belong to different rings"
+        );
+        let zero = self.ring.coeff_ring.zero();
+        let mut a = self.coefficients.into_iter();
+        let mut b = rhs.coefficients.into_iter();
+        let mut result = Vec::new();
+        loop {
+            match (a.next(), b.next()) {
+                (Some(x), Some(y)) => result.push(x - y),
+                (Some(x), None) => result.push(x),
+                (None, Some(y)) => result.push(zero.clone() - y),
+                (None, None) => break,
+            }
+        }
+        Polynomial::new(&self.ring, result)
+    }
+}
+
+impl<R> Mul for Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "Polynomial operands belong to different rings"
+        );
+        if self.coefficients.is_empty() || rhs.coefficients.is_empty() {
+            return Polynomial {
+                coefficients: Vec::new(),
+                ring: self.ring,
+            };
+        }
+        let n = self.coefficients.len();
+        let m = rhs.coefficients.len();
+        let zero = self.ring.coeff_ring.zero();
+        let mut result: Vec<R::E> = (0..n + m - 1).map(|_| zero.clone()).collect();
+        for i in 0..n {
+            for j in 0..m {
+                let term = self.coefficients[i].clone() * rhs.coefficients[j].clone();
+                let prev = std::mem::replace(&mut result[i + j], zero.clone());
+                result[i + j] = prev + term;
+            }
+        }
+        Polynomial::new(&self.ring, result)
+    }
+}
+
+impl<R> fmt::Display for Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.coefficients.is_empty() {
+            return write!(f, "0");
+        }
+        for (i, c) in self.coefficients.iter().enumerate() {
+            if i > 0 {
+                write!(f, " + ")?;
+            }
+            match i {
+                0 => write!(f, "{}", c)?,
+                1 => write!(f, "{}*x", c)?,
+                k => write!(f, "{}*x^{{{}}}", c, k)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<R> Set for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    type E = Polynomial<R>;
+}
+
+impl<R> Semigroup for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+}
+
+impl<R> Monoid for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    fn identity(&self) -> Self::E {
+        Polynomial::new(self, vec![self.coeff_ring.identity()])
+    }
+}
+
+impl<R> CommutativeMonoid for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    fn zero(&self) -> Self::E {
+        Polynomial::new(self, Vec::new())
+    }
+}
+
+impl<R> AdditiveGroup for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+}
+
+impl<R> SemiRing for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+}
+
+impl<R> Ring for Rc<PolynomialRing<R>>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+}
+
+/// Polynomial long division. Requires `R: Field` so leading coefficients can be inverted.
+/// Panics if the divisor is the zero polynomial.
+impl<R> DivRem for Polynomial<R>
+where
+    R: Field,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    fn div_rem(&self, divisor: &Self) -> (Self, Self) {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &divisor.ring),
+            "Polynomial operands belong to different rings"
+        );
+        let coeff_ring = &self.ring.coeff_ring;
+        let zero_c = coeff_ring.zero();
+
+        let lead_b = divisor
+            .coefficients
+            .last()
+            .expect("division by zero polynomial");
+        let lead_b_inv = coeff_ring
+            .inverse(lead_b)
+            .expect("leading coefficient must be invertible in a field");
+        let deg_b = divisor.coefficients.len() - 1;
+
+        let mut r: Vec<R::E> = self.coefficients.clone();
+        let mut q: Vec<R::E> = Vec::new();
+
+        while r.len() > deg_b {
+            // c = leading(r) / leading(divisor)
+            let c = r.last().unwrap().clone() * lead_b_inv.clone();
+            let k = r.len() - 1 - deg_b;
+
+            // r -= c * x^k * divisor
+            for j in 0..divisor.coefficients.len() {
+                let term = c.clone() * divisor.coefficients[j].clone();
+                let prev = std::mem::replace(&mut r[k + j], zero_c.clone());
+                r[k + j] = prev - term;
+            }
+
+            // q += c * x^k
+            while q.len() < k + 1 {
+                q.push(zero_c.clone());
+            }
+            let prev_q = std::mem::replace(&mut q[k], zero_c.clone());
+            q[k] = prev_q + c;
+
+            // The leading coefficient of r is now zero; trim it (and any others that
+            // happened to cancel along the way).
+            while r.last() == Some(&zero_c) {
+                r.pop();
+            }
+        }
+
+        (
+            Polynomial::new(&self.ring, q),
+            Polynomial::new(&self.ring, r),
+        )
+    }
+}
+
+/// `R[x]` is a Euclidean domain when `R` is a field. The unit part is the leading
+/// coefficient (so canonical representatives are monic polynomials).
+impl<R> EuclideanDomain for Rc<PolynomialRing<R>>
+where
+    R: Field,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+{
+    fn unit_part(&self, x: &Self::E) -> Self::E {
+        let lead = x
+            .coefficients
+            .last()
+            .cloned()
+            .unwrap_or_else(|| self.coeff_ring.identity());
+        Polynomial::new(self, vec![lead])
+    }
+
+    fn unit_inverse(&self, u: &Self::E) -> Self::E {
+        let c = u
+            .coefficients
+            .first()
+            .expect("unit_inverse called on the zero polynomial");
+        let c_inv = self
+            .coeff_ring
+            .inverse(c)
+            .expect("unit_inverse called on a non-unit polynomial");
+        Polynomial::new(self, vec![c_inv])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::integers::{Integer, Integers};
+    use num_bigint::BigInt;
+
+    fn int(n: i64) -> Integer {
+        Integer::from(BigInt::from(n))
+    }
+
+    fn zx() -> Rc<PolynomialRing<Integers>> {
+        PolynomialRing::new(Integers::default())
+    }
+
+    fn poly(ring: &Rc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
+        Polynomial::new(ring, coeffs.into_iter().map(int).collect())
+    }
+
+    #[test]
+    fn display_covers_zero_constant_linear_and_higher_terms() {
+        let zx = zx();
+        // Zero polynomial renders as "0", regardless of how it was constructed.
+        assert_eq!(format!("{}", poly(&zx, vec![])), "0");
+        assert_eq!(format!("{}", poly(&zx, vec![0, 0, 0])), "0");
+
+        // Constant: no `x`.
+        assert_eq!(format!("{}", poly(&zx, vec![7])), "7");
+
+        // Linear: bare `x`, no exponent.
+        assert_eq!(format!("{}", poly(&zx, vec![0, 1])), "0 + 1*x");
+        assert_eq!(format!("{}", poly(&zx, vec![3, 2])), "3 + 2*x");
+
+        // Degree ≥ 2 wraps the exponent in `{}` for LaTeX compatibility.
+        assert_eq!(format!("{}", poly(&zx, vec![1, 2, 3])), "1 + 2*x + 3*x^{2}");
+        assert_eq!(
+            format!("{}", poly(&zx, vec![0, 0, 0, 4])),
+            "0 + 0*x + 0*x^{2} + 4*x^{3}"
+        );
+    }
+
+    #[test]
+    fn new_strips_trailing_zero_coefficients() {
+        let zx = zx();
+        // Trailing zeros must be stripped so degree is well-defined and `==` works
+        // structurally (both impls of Eq compare coefficient vectors directly).
+        let a = poly(&zx, vec![1, 2, 0, 0]);
+        let b = poly(&zx, vec![1, 2]);
+        assert_eq!(a, b);
+
+        // All-zero input collapses to the empty representation (the zero polynomial).
+        let z = poly(&zx, vec![0, 0, 0]);
+        assert_eq!(z, zx.zero());
+    }
+}
