@@ -195,16 +195,18 @@ where
                 ring: self.ring,
             };
         }
-        let n = self.coefficients.len();
-        let m = rhs.coefficients.len();
+        let (a, b) = (&self.coefficients, &rhs.coefficients);
+        let (n, m) = (a.len(), b.len());
         let zero = self.ring.coeff_ring.zero();
-        let mut result: Vec<R::E> = (0..n + m - 1).map(|_| zero.clone()).collect();
-        for i in 0..n {
-            for j in 0..m {
-                let term = self.coefficients[i].clone() * rhs.coefficients[j].clone();
-                result[i + j] += term;
-            }
-        }
+        // Each output coefficient is the sum over i + j == k, gathered independently of
+        // the others, so the outer map has no shared state to contend over.
+        let result: Vec<R::E> = (0..n + m - 1)
+            .map(|k| {
+                (k.saturating_sub(m - 1)..=k.min(n - 1))
+                    .map(|i| a[i].clone() * b[k - i].clone())
+                    .fold(zero.clone(), |sum, term| sum + term)
+            })
+            .collect();
         self.ring.element(result)
     }
 }
@@ -283,16 +285,16 @@ where
                 ring: Rc::clone(&self.ring),
             };
         }
-        let n = self.coefficients.len();
-        let m = rhs.coefficients.len();
+        let (a, b) = (&self.coefficients, &rhs.coefficients);
+        let (n, m) = (a.len(), b.len());
         let zero = self.ring.coeff_ring.zero();
-        let mut result: Vec<R::E> = (0..n + m - 1).map(|_| zero.clone()).collect();
-        for i in 0..n {
-            for j in 0..m {
-                let term = &self.coefficients[i] * &rhs.coefficients[j];
-                result[i + j] += term;
-            }
-        }
+        let result: Vec<R::E> = (0..n + m - 1)
+            .map(|k| {
+                (k.saturating_sub(m - 1)..=k.min(n - 1))
+                    .map(|i| &a[i] * &b[k - i])
+                    .fold(zero.clone(), |sum, term| sum + term)
+            })
+            .collect();
         self.ring.element(result)
     }
 }
