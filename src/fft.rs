@@ -2,6 +2,7 @@
 
 use crate::pow::pow;
 use crate::structures::{Ring, RingOps};
+use std::ops::MulAssign;
 
 /// Reorders `values` so index `i` holds what was at `i` with its bits reversed.
 fn bit_reverse<T>(values: &mut [T]) {
@@ -63,11 +64,11 @@ where
 pub fn inverse_fft<R>(ring: &R, values: &mut [R::E], omega_inv: &R::E, n_inv: &R::E)
 where
     R: Ring,
-    R::E: RingOps,
+    R::E: RingOps + for<'a> MulAssign<&'a R::E>,
 {
     fft(ring, values, omega_inv);
     for v in values.iter_mut() {
-        *v = v.clone() * n_inv.clone();
+        *v *= n_inv;
     }
 }
 

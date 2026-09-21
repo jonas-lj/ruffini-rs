@@ -6,7 +6,7 @@
 //! itself, so a single element type can participate in multiple structures.
 
 use num_bigint::{BigInt, Sign};
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul, MulAssign, Sub};
 use std::rc::Rc;
 
 /// The ring operations, bundled so the element bound can be written once per `where`
@@ -360,6 +360,23 @@ macro_rules! quotient_ring_int_ops {
     )*};
 }
 quotient_ring_int_ops!(i64, BigInt);
+
+/// Multiplies in place, reading both operands by reference so neither is cloned.
+impl<R> MulAssign<&QuotientRingElement<R>> for QuotientRingElement<R>
+where
+    R: EuclideanDomain,
+    R::E: RingOps + DivRem + Eq,
+    for<'c> &'c R::E: Mul<&'c R::E, Output = R::E>,
+{
+    fn mul_assign(&mut self, rhs: &QuotientRingElement<R>) {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "QuotientRingElement operands belong to different quotient rings"
+        );
+        let value = self.ring.reduce(&self.value * &rhs.value);
+        self.value = value;
+    }
+}
 
 impl<R> Domain for Rc<QuotientRing<R>>
 where

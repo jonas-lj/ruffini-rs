@@ -6,7 +6,7 @@ use crate::structures::{
 };
 use derive_more::{Add, Display, From, Sub};
 use num_bigint::BigInt;
-use std::ops::Mul;
+use std::ops::{Mul, MulAssign};
 use std::rc::Rc;
 
 /// Handle for the set of integers; used to construct [`Integer`] values.
@@ -39,6 +39,18 @@ impl Mul<Integer> for Integer {
     type Output = Integer;
     fn mul(self, rhs: Integer) -> Self::Output {
         Integer(self.0 * rhs.0)
+    }
+}
+
+impl MulAssign<&Integer> for Integer {
+    fn mul_assign(&mut self, rhs: &Integer) {
+        self.0 *= &rhs.0;
+    }
+}
+
+impl MulAssign<Integer> for Integer {
+    fn mul_assign(&mut self, rhs: Integer) {
+        self.0 *= rhs.0;
     }
 }
 

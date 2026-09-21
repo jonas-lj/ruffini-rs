@@ -12,7 +12,7 @@ use crate::structures::{
 use num_bigint::{BigInt, Sign};
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 use std::rc::Rc;
 
 /// Returned by [`ConstructiveReal::msd`] when the value is too close to zero to locate.
@@ -361,6 +361,12 @@ impl Mul for ConstructiveReal {
     type Output = ConstructiveReal;
     fn mul(self, rhs: ConstructiveReal) -> ConstructiveReal {
         ConstructiveReal::new(Op::Mul(self, rhs))
+    }
+}
+
+impl MulAssign<&ConstructiveReal> for ConstructiveReal {
+    fn mul_assign(&mut self, rhs: &ConstructiveReal) {
+        *self = ConstructiveReal::new(Op::Mul(self.clone(), rhs.clone()));
     }
 }
 

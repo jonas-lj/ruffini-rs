@@ -204,6 +204,11 @@ mod tests {
         // The integer is reduced into the ring first, so it may be arbitrarily large.
         assert_eq!(f7.element(1) * BigInt::from(15), f7.element(1));
 
+        // `MulAssign` reads both operands by reference rather than cloning them.
+        let mut x = f7.element(3);
+        x *= &f7.element(6);
+        assert_eq!(x, f7.element(4));
+
         // Same for polynomials, where the integer becomes a constant polynomial.
         let zx = PolynomialRing::new(Integers::default());
         let p = zx.element(vec![int(1), int(2)]); // 1 + 2x
