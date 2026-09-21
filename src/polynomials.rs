@@ -5,8 +5,8 @@
 //! [`crate::structures::QuotientRing`] pattern.
 
 use crate::structures::{
-    AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Ring, SemiRing,
-    Semigroup, Set,
+    AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Ring, RingOps,
+    SemiRing, Semigroup, Set,
 };
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
@@ -16,7 +16,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone)]
 pub struct PolynomialRing<R: Ring>
 where
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     coeff_ring: R,
 }
@@ -29,7 +29,7 @@ where
 #[derive(Debug, Clone)]
 pub struct Polynomial<R: Ring>
 where
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     coefficients: Vec<R::E>,
     ring: Rc<PolynomialRing<R>>,
@@ -38,7 +38,7 @@ where
 impl<R> PolynomialRing<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     /// Construct `R[x]`, wrapped in an [`Rc`] so polynomials can share the ring handle.
     pub fn new(coeff_ring: R) -> Rc<Self> {
@@ -54,7 +54,7 @@ where
 impl<R> Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     /// Degree of the polynomial, or `None` for the zero polynomial.
     pub fn degree(&self) -> Option<usize> {
@@ -74,7 +74,7 @@ where
 impl<R> PartialEq for Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
@@ -88,14 +88,14 @@ where
 impl<R> Eq for Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
 }
 
 impl<R> Add for Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
@@ -120,7 +120,7 @@ where
 impl<R> Sub for Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -147,7 +147,7 @@ where
 impl<R> Mul for Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
@@ -181,7 +181,7 @@ where
 impl<R> Add<&Polynomial<R>> for &Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
     for<'c> &'c R::E: Add<&'c R::E, Output = R::E>,
 {
     type Output = Polynomial<R>;
@@ -207,7 +207,7 @@ where
 impl<R> Sub<&Polynomial<R>> for &Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
     for<'c> &'c R::E: Sub<&'c R::E, Output = R::E>,
 {
     type Output = Polynomial<R>;
@@ -235,7 +235,7 @@ where
 impl<R> Mul<&Polynomial<R>> for &Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
     for<'c> &'c R::E: Add<&'c R::E, Output = R::E> + Mul<&'c R::E, Output = R::E>,
 {
     type Output = Polynomial<R>;
@@ -270,7 +270,7 @@ macro_rules! polynomial_mixed_ops {
         impl<R> $op<&Polynomial<R>> for Polynomial<R>
         where
             R: Ring,
-            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+            R::E: RingOps,
             for<'c> &'c Polynomial<R>: $op<&'c Polynomial<R>, Output = Polynomial<R>>,
         {
             type Output = Polynomial<R>;
@@ -282,7 +282,7 @@ macro_rules! polynomial_mixed_ops {
         impl<R> $op<Polynomial<R>> for &Polynomial<R>
         where
             R: Ring,
-            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+            R::E: RingOps,
             for<'c> &'c Polynomial<R>: $op<&'c Polynomial<R>, Output = Polynomial<R>>,
         {
             type Output = Polynomial<R>;
@@ -297,7 +297,7 @@ polynomial_mixed_ops!(Add, add; Sub, sub; Mul, mul);
 impl<R> fmt::Display for Polynomial<R>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + fmt::Display,
+    R::E: RingOps + fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.coefficients.is_empty() {
@@ -320,7 +320,7 @@ where
 impl<R> Set for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     type E = Polynomial<R>;
     type Repr = Vec<R::E>;
@@ -342,14 +342,14 @@ where
 impl<R> Semigroup for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
 }
 
 impl<R> Monoid for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     fn identity(&self) -> Self::E {
         self.element(vec![self.coeff_ring.identity()])
@@ -359,7 +359,7 @@ where
 impl<R> CommutativeMonoid for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     fn zero(&self) -> Self::E {
         self.element(Vec::new())
@@ -369,21 +369,21 @@ where
 impl<R> AdditiveGroup for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
 }
 
 impl<R> SemiRing for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
 }
 
 impl<R> Ring for Rc<PolynomialRing<R>>
 where
     R: Ring,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
 }
 
@@ -392,7 +392,7 @@ where
 impl<R> DivRem for Polynomial<R>
 where
     R: Field,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     fn div_rem(&self, divisor: &Self) -> (Self, Self) {
         debug_assert!(
@@ -452,7 +452,7 @@ where
 impl<R> EuclideanDomain for Rc<PolynomialRing<R>>
 where
     R: Field,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    R::E: RingOps,
 {
     fn unit_part(&self, x: &Self::E) -> Self::E {
         let lead = x

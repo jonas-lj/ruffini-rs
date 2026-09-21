@@ -8,6 +8,17 @@
 use std::ops::{Add, Mul, Sub};
 use std::rc::Rc;
 
+/// The ring operations, bundled so the element bound can be written once per `where`
+/// clause instead of spelled out three times.
+///
+/// These are supertraits rather than a `where` clause, which is what makes them usable
+/// at the call site: Rust elaborates supertrait bounds, but never a trait's own `where`
+/// clause, so `R::E: RingOps` yields `Add`/`Sub`/`Mul` while `R: Ring` alone does not.
+/// The blanket impl covers every element type that already has the three operators.
+pub trait RingOps: Sized + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> {}
+
+impl<T: Add<Output = T> + Sub<Output = T> + Mul<Output = T>> RingOps for T {}
+
 /// A set: a value-domain handle associating a concrete element type with structure impls.
 pub trait Set: Clone {
     /// The element type carried by this set.
@@ -69,7 +80,7 @@ where
 /// A ring: a [`SemiRing`] whose additive monoid is also a group.
 pub trait Ring: SemiRing + AdditiveGroup
 where
-    Self::E: Add<Output = Self::E> + Sub<Output = Self::E> + Mul<Output = Self::E>,
+    Self::E: RingOps,
 {
 }
 
@@ -89,7 +100,7 @@ pub trait DivRem: Sized {
 /// normal part is the monic associate.
 pub trait EuclideanDomain: Ring
 where
-    Self::E: Add<Output = Self::E> + Sub<Output = Self::E> + Mul<Output = Self::E> + DivRem,
+    Self::E: RingOps + DivRem,
 {
     /// Returns the unit part of `x` (the unit that, when divided out, leaves the
     /// canonical representative of `x`'s associate class).
@@ -129,7 +140,7 @@ where
 /// A field: a ring in which every nonzero element has a multiplicative inverse.
 pub trait Field: Ring
 where
-    Self::E: Add<Output = Self::E> + Sub<Output = Self::E> + Mul<Output = Self::E>,
+    Self::E: RingOps,
 {
     /// Returns the multiplicative inverse of `x`, or [`None`] if `x` is the additive identity.
     fn inverse(&self, x: &Self::E) -> Option<Self::E>;
@@ -144,7 +155,7 @@ where
 #[derive(Debug, Clone)]
 pub struct QuotientRingElement<R: EuclideanDomain>
 where
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     value: R::E,
     ring: Rc<QuotientRing<R>>,
@@ -154,7 +165,7 @@ where
 #[derive(Debug, Clone)]
 pub struct QuotientRing<R: EuclideanDomain>
 where
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     ring: R,
     modulus: R::E,
@@ -163,7 +174,7 @@ where
 impl<R> QuotientRing<R>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     /// Construct `R / (modulus)`, wrapped in an [`Rc`] so that elements can hold a
     /// cheap shared reference back to their containing ring.
@@ -188,7 +199,7 @@ where
 impl<R> PartialEq for QuotientRingElement<R>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     fn eq(&self, other: &Self) -> bool {
         let diff = self.value.clone() - other.value.clone();
@@ -199,7 +210,7 @@ where
 impl<R> Eq for QuotientRingElement<R>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
 }
 
@@ -212,7 +223,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op for QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            R::E: RingOps + DivRem,
         {
             type Output = Self;
             fn $method(self, rhs: Self) -> Self::Output {
@@ -228,7 +239,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op<&QuotientRingElement<R>> for &QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            R::E: RingOps + DivRem,
             for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
         {
             type Output = QuotientRingElement<R>;
@@ -245,7 +256,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op<&QuotientRingElement<R>> for QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            R::E: RingOps + DivRem,
             for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
         {
             type Output = QuotientRingElement<R>;
@@ -257,7 +268,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op<QuotientRingElement<R>> for &QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            R::E: RingOps + DivRem,
             for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
         {
             type Output = QuotientRingElement<R>;
@@ -272,7 +283,7 @@ quotient_ring_ops!(Add, add; Sub, sub; Mul, mul);
 impl<R> Set for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     type E = QuotientRingElement<R>;
     type Repr = R::E;
@@ -289,14 +300,14 @@ where
 impl<R> Semigroup for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
 }
 
 impl<R> Monoid for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     fn identity(&self) -> Self::E {
         self.element(self.ring.identity())
@@ -306,7 +317,7 @@ where
 impl<R> CommutativeMonoid for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     fn zero(&self) -> Self::E {
         self.element(self.ring.zero())
@@ -316,21 +327,21 @@ where
 impl<R> AdditiveGroup for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
 }
 
 impl<R> SemiRing for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
 }
 
 impl<R> Ring for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
 }
 
@@ -345,7 +356,7 @@ where
 impl<R> Field for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+    R::E: RingOps + DivRem,
 {
     fn inverse(&self, x: &Self::E) -> Option<Self::E> {
         if x == &self.zero() {

@@ -37,21 +37,21 @@ mod tests {
 
     #[test]
     fn quotient_ring_arithmetic() {
-        let r = Integers::modulo(7);
-        let three = r.element(3);
-        let six = r.element(6);
+        let f7 = Integers::modulo(7);
+        let three = f7.element(3);
+        let six = f7.element(6);
         // 3 + 6 = 9 ≡ 2 (mod 7)
-        assert_eq!(&three + &six, r.element(2));
+        assert_eq!(&three + &six, f7.element(2));
         // 3 * 6 = 18 ≡ 4 (mod 7)
-        assert_eq!(&three * &six, r.element(4));
+        assert_eq!(&three * &six, f7.element(4));
         // zero and identity
-        assert_eq!(r.zero(), r.element(0));
-        assert_eq!(r.identity(), r.element(1));
+        assert_eq!(f7.zero(), f7.element(0));
+        assert_eq!(f7.identity(), f7.element(1));
 
         // `eq` compares plain integers as representatives, without naming elements
-        assert!(r.eq(3 + 6, 2));
-        assert!(!r.eq(3 + 6, 3));
-        assert!(r.eq(-1, 6));
+        assert!(f7.eq(3 + 6, 2));
+        assert!(!f7.eq(3 + 6, 3));
+        assert!(f7.eq(-1, 6));
     }
 
     #[test]
