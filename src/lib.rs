@@ -21,7 +21,9 @@ pub mod structures;
 mod tests {
     use crate::integers::{Integer, Integers};
     use crate::polynomials::PolynomialRing;
-    use crate::structures::{CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Domain};
+    use crate::structures::{
+        CommutativeMonoid, DivRem, Domain, EuclideanDomain, Field, Monoid, Ring,
+    };
     use num_bigint::BigInt;
 
     fn int(n: i64) -> Integer {
@@ -199,6 +201,66 @@ mod tests {
         assert_eq!(zmod6.inverse(&zmod6.element(3)), None);
         // 5*5 = 25 ≡ 1 (mod 6)
         assert_eq!(zmod6.inverse(&zmod6.element(5)), Some(zmod6.element(5)));
+    }
+
+    #[test]
+    fn from_integer_agrees_with_direct_construction() {
+        let z = Integers::default();
+        // Small values, including zero and negatives.
+        for n in -20i64..=20 {
+            assert_eq!(z.from_integer(n), int(n));
+        }
+        // Powers of two and their neighbours exercise the bit loop's boundaries:
+        // 2^k sets exactly the top bit, 2^k - 1 sets every bit below it.
+        for k in 0..62u32 {
+            let p = 1i64 << k;
+            assert_eq!(z.from_integer(p), int(p));
+            assert_eq!(z.from_integer(p - 1), int(p - 1));
+            assert_eq!(z.from_integer(-p), int(-p));
+        }
+    }
+
+    #[test]
+    fn from_integer_handles_values_far_beyond_a_machine_word() {
+        let z = Integers::default();
+        let n = 1u128 << 100;
+        assert_eq!(z.from_integer(n), Integer::from(n));
+        // Double-and-add is logarithmic, so this terminates; repeated addition would not.
+        let huge = BigInt::from(1u128 << 127) * BigInt::from(1u128 << 127);
+        assert_eq!(z.from_integer(huge.clone()), Integer::from(huge));
+    }
+
+    #[test]
+    fn from_integer_is_a_ring_homomorphism() {
+        let f7 = Integers::modulo(7);
+        assert_eq!(f7.from_integer(0), f7.zero());
+        assert_eq!(f7.from_integer(1), f7.identity());
+        // 9 ≡ 2 and -1 ≡ 6 (mod 7)
+        assert_eq!(f7.from_integer(9), f7.element(2));
+        assert_eq!(f7.from_integer(-1), f7.element(6));
+        // n ↦ n · 1 preserves both operations.
+        for a in -10i64..10 {
+            for b in -10i64..10 {
+                assert_eq!(
+                    f7.from_integer(a + b),
+                    &f7.from_integer(a) + &f7.from_integer(b)
+                );
+                assert_eq!(
+                    f7.from_integer(a * b),
+                    &f7.from_integer(a) * &f7.from_integer(b)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn from_integer_on_a_polynomial_ring_gives_a_constant() {
+        let zx = PolynomialRing::new(Integers::default());
+        assert_eq!(zx.from_integer(3), zx.element(vec![int(3)]));
+        assert_eq!(zx.from_integer(-3), zx.element(vec![int(-3)]));
+        assert_eq!(zx.from_integer(0), zx.zero());
+        assert_eq!(zx.from_integer(1), zx.identity());
+        assert_eq!(zx.from_integer(5).degree(), Some(0));
     }
 
     /// A ring whose elements have no decidable equality, standing in for something like
