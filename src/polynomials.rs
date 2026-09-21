@@ -102,9 +102,7 @@ where
     }
 
     /// The evaluation map as a closure, for where a function value is wanted.
-    ///
-    /// `impl Fn` is not available: implementing the `Fn` traits needs `fn_traits` and
-    /// the `rust-call` ABI, both nightly-only.
+    // Droppable once fn_traits is stable: Polynomial could implement Fn directly.
     pub fn as_fn(&self) -> impl Fn(&R::E) -> R::E + '_ {
         move |x| self.evaluate(x)
     }
