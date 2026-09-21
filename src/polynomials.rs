@@ -162,17 +162,18 @@ where
             "Polynomial operands belong to different rings"
         );
         let zero = self.ring.coeff_ring.zero();
-        let mut a = self.coefficients.into_iter();
-        let mut b = rhs.coefficients.into_iter();
-        let mut result = Vec::new();
-        loop {
-            match (a.next(), b.next()) {
-                (Some(x), Some(y)) => result.push(x - y),
-                (Some(x), None) => result.push(x),
-                (None, Some(y)) => result.push(zero.clone() - y),
-                (None, None) => break,
-            }
-        }
+        let result: Vec<R::E> = self
+            .coefficients
+            .into_iter()
+            .zip_longest(rhs.coefficients)
+            .map(|pair| match pair {
+                EitherOrBoth::Both(x, y) => x - y,
+                EitherOrBoth::Left(x) => x,
+                // Owned Sub cannot take a borrowed-operand bound without RingOps
+                // dragging it through nested polynomials, so zero is replaced per term.
+                EitherOrBoth::Right(y) => zero.clone() - y,
+            })
+            .collect();
         self.ring.element(result)
     }
 }
@@ -249,16 +250,16 @@ where
             "Polynomial operands belong to different rings"
         );
         let zero = self.ring.coeff_ring.zero();
-        let (a, b) = (&self.coefficients, &rhs.coefficients);
-        let mut result = Vec::with_capacity(a.len().max(b.len()));
-        for i in 0..a.len().max(b.len()) {
-            match (a.get(i), b.get(i)) {
-                (Some(x), Some(y)) => result.push(x - y),
-                (Some(x), None) => result.push(x.clone()),
-                (None, Some(y)) => result.push(&zero - y),
-                (None, None) => unreachable!("index is below both lengths"),
-            }
-        }
+        let result: Vec<R::E> = self
+            .coefficients
+            .iter()
+            .zip_longest(&rhs.coefficients)
+            .map(|pair| match pair {
+                EitherOrBoth::Both(x, y) => x - y,
+                EitherOrBoth::Left(x) => x.clone(),
+                EitherOrBoth::Right(y) => &zero - y,
+            })
+            .collect();
         self.ring.element(result)
     }
 }
