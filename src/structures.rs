@@ -151,7 +151,6 @@ where
     fn extended_gcd(&self, a: Self::E, b: Self::E) -> (Self::E, Self::E, Self::E)
     where
         Self: Sized,
-        Self::E: for<'a> MulAssign<&'a Self::E>,
     {
         crate::euclidean::extended_gcd(self, a, b)
     }
@@ -472,7 +471,7 @@ where
 impl<R> Field for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem + Eq + for<'a> MulAssign<&'a R::E>,
+    R::E: RingOps + DivRem + Eq,
 {
     fn invert(&self, x: &Self::E) -> Option<Self::E> {
         if x == &self.zero() {
