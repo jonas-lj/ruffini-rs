@@ -88,7 +88,7 @@ mod tests {
             .map(|k| {
                 let mut acc = ring.zero();
                 for (j, v) in values.iter().enumerate() {
-                    acc = acc + v.clone() * pow(ring, omega, j * k);
+                    acc += v.clone() * pow(ring, omega, j * k);
                 }
                 acc
             })

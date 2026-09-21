@@ -248,7 +248,7 @@ mod tests {
         use crate::structures::{
             AdditiveGroup, CommutativeMonoid, Domain, Monoid, Ring, SemiRing, Semigroup,
         };
-        use std::ops::{Add, Mul, Sub};
+        use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
         /// Deliberately implements neither `PartialEq` nor `Eq`.
         #[derive(Clone)]
@@ -270,6 +270,16 @@ mod tests {
             type Output = Self;
             fn mul(self, rhs: Self) -> Self {
                 Opaque(self.0 * rhs.0)
+            }
+        }
+        impl AddAssign for Opaque {
+            fn add_assign(&mut self, rhs: Self) {
+                self.0 += rhs.0;
+            }
+        }
+        impl MulAssign for Opaque {
+            fn mul_assign(&mut self, rhs: Self) {
+                self.0 *= rhs.0;
             }
         }
 

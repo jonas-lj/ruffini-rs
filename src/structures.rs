@@ -16,9 +16,20 @@ use std::rc::Rc;
 /// at the call site: Rust elaborates supertrait bounds, but never a trait's own `where`
 /// clause, so `R::E: RingOps` yields `Add`/`Sub`/`Mul` while `R: Ring` alone does not.
 /// The blanket impl covers every element type that already has the three operators.
-pub trait RingOps: Sized + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> {}
+pub trait RingOps:
+    Sized
+    + Add<Output = Self>
+    + AddAssign
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + MulAssign
+{
+}
 
-impl<T: Add<Output = T> + Sub<Output = T> + Mul<Output = T>> RingOps for T {}
+impl<T> RingOps for T where
+    T: Add<Output = T> + AddAssign + Sub<Output = T> + Mul<Output = T> + MulAssign
+{
+}
 
 /// A value-domain handle: it names a concrete element type and knows how to build
 /// elements of it from representatives.
@@ -104,7 +115,7 @@ where
         let bits = magnitude.bits();
         for i in 0..bits {
             if magnitude.bit(i) {
-                result = result + addend.clone();
+                result += addend.clone();
             }
             // Skip the final doubling; nothing above the top bit will read it.
             if i + 1 < bits {
@@ -361,9 +372,25 @@ macro_rules! quotient_ring_int_ops {
 }
 quotient_ring_int_ops!(i64, BigInt);
 
-/// Compound assignment, reading both operands by reference so neither is cloned.
+/// Compound assignment.
 macro_rules! quotient_ring_assign_ops {
     ($($op:ident, $method:ident, $base:ident, $base_method:ident);* $(;)?) => {$(
+        impl<R> $op for QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: RingOps + DivRem + Eq,
+        {
+            fn $method(&mut self, rhs: QuotientRingElement<R>) {
+                debug_assert!(
+                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    "QuotientRingElement operands belong to different quotient rings"
+                );
+                let value = self.ring.reduce(self.value.clone().$base_method(rhs.value));
+                self.value = value;
+            }
+        }
+
+        /// Reads both operands by reference, so neither representative is cloned.
         impl<R> $op<&QuotientRingElement<R>> for QuotientRingElement<R>
         where
             R: EuclideanDomain,
@@ -377,17 +404,6 @@ macro_rules! quotient_ring_assign_ops {
                 );
                 let value = self.ring.reduce((&self.value).$base_method(&rhs.value));
                 self.value = value;
-            }
-        }
-
-        impl<R> $op<QuotientRingElement<R>> for QuotientRingElement<R>
-        where
-            R: EuclideanDomain,
-            R::E: RingOps + DivRem + Eq,
-            for<'c> &'c R::E: $base<&'c R::E, Output = R::E>,
-        {
-            fn $method(&mut self, rhs: QuotientRingElement<R>) {
-                self.$method(&rhs);
             }
         }
     )*};
