@@ -90,6 +90,24 @@ where
     pub fn coefficients(&self) -> &[R::E] {
         &self.coefficients
     }
+
+    /// Evaluates at `x` by Horner's method, in `degree` multiplications.
+    pub fn evaluate(&self, x: &R::E) -> R::E {
+        self.coefficients
+            .iter()
+            .rev()
+            .fold(self.ring.coeff_ring.zero(), |acc, c| {
+                acc * x.clone() + c.clone()
+            })
+    }
+
+    /// The evaluation map as a closure, for where a function value is wanted.
+    ///
+    /// `impl Fn` is not available: implementing the `Fn` traits needs `fn_traits` and
+    /// the `rust-call` ABI, both nightly-only.
+    pub fn as_fn(&self) -> impl Fn(&R::E) -> R::E + '_ {
+        move |x| self.evaluate(x)
+    }
 }
 
 impl<R> Clone for Polynomial<R>

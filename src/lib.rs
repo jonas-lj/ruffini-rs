@@ -159,6 +159,52 @@ mod tests {
     }
 
     #[test]
+    fn polynomial_evaluation_by_horner() {
+        let zx = Integers::default().polynomials();
+        let poly = |c: &[i64]| zx.element(c.iter().map(|n| int(*n)).collect::<Vec<_>>());
+
+        // Against direct evaluation of sum c_i x^i, over several shapes and points.
+        for coeffs in [
+            vec![],
+            vec![7],
+            vec![1, 2],
+            vec![1, 0, -3, 4],
+            vec![-5, 2, 0, 0, 1],
+        ] {
+            for x in [-3i64, -1, 0, 1, 2, 10] {
+                let expected: i64 = coeffs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| c * x.pow(i as u32))
+                    .sum();
+                assert_eq!(
+                    poly(&coeffs).evaluate(&int(x)),
+                    int(expected),
+                    "coeffs = {coeffs:?}, x = {x}"
+                );
+            }
+        }
+
+        // The zero polynomial is zero everywhere; a constant ignores x.
+        assert_eq!(poly(&[]).evaluate(&int(9)), zx.coefficients().zero());
+        assert_eq!(poly(&[7]).evaluate(&int(9)), int(7));
+
+        // `as_fn` gives a value usable where a function is expected.
+        let p = poly(&[1, 2]); // 1 + 2x
+        let f = p.as_fn();
+        assert_eq!(
+            (0..4).map(|n| f(&int(n))).collect::<Vec<_>>(),
+            (0..4).map(|n| int(1 + 2 * n)).collect::<Vec<_>>()
+        );
+
+        // Reduction happens in the ring: evaluating over F_7 stays in F_7.
+        let f7 = Integers::modulo(7);
+        let f7x = f7.polynomials();
+        let q = f7x.element(vec![f7.element(1), f7.element(0), f7.element(1)]); // 1 + x^2
+        assert_eq!(q.evaluate(&f7.element(3)), f7.element(3)); // 1 + 9 = 10 ≡ 3
+    }
+
+    #[test]
     fn polynomial_division_in_f7_x() {
         let f7 = Integers::modulo(7);
         let f7x = f7.polynomials();
