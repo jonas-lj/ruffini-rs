@@ -2,7 +2,7 @@
 
 use crate::pow::pow;
 use crate::structures::{Ring, RingOps};
-use std::ops::{AddAssign, MulAssign};
+use std::ops::MulAssign;
 
 /// Reorders `values` so index `i` holds what was at `i` with its bits reversed.
 fn bit_reverse<T>(values: &mut [T]) {
@@ -29,7 +29,7 @@ fn bit_reverse<T>(values: &mut [T]) {
 pub fn fft<R>(ring: &R, values: &mut [R::E], omega: &R::E)
 where
     R: Ring,
-    R::E: RingOps + for<'a> AddAssign<&'a R::E> + for<'a> MulAssign<&'a R::E>,
+    R::E: RingOps + for<'a> MulAssign<&'a R::E>,
 {
     let n = values.len();
     assert!(n.is_power_of_two(), "fft length must be a power of two");
@@ -46,12 +46,10 @@ where
             let mut w = ring.identity();
             for j in 0..half {
                 let u = block[j].clone();
-                let mut v = block[j + half].clone();
-                v *= &w;
-                let mut sum = u.clone();
-                sum += &v;
-                block[j] = sum;
+                let v = block[j + half].clone() * w.clone();
+                block[j] = u.clone() + v.clone();
                 block[j + half] = u - v;
+                // `w` really is an accumulator, unlike the sums above.
                 w *= &step;
             }
         }
@@ -67,7 +65,7 @@ where
 pub fn inverse_fft<R>(ring: &R, values: &mut [R::E], omega_inv: &R::E, n_inv: &R::E)
 where
     R: Ring,
-    R::E: RingOps + for<'a> AddAssign<&'a R::E> + for<'a> MulAssign<&'a R::E>,
+    R::E: RingOps + for<'a> MulAssign<&'a R::E>,
 {
     fft(ring, values, omega_inv);
     for v in values.iter_mut() {
