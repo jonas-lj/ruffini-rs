@@ -5,6 +5,7 @@
 //! value-domain handle (e.g. [`crate::integers::Integers`]) rather than on the element type
 //! itself, so a single element type can participate in multiple structures.
 
+use num_bigint::{BigInt, Sign};
 use std::ops::{Add, Mul, Sub};
 use std::rc::Rc;
 
@@ -91,6 +92,37 @@ pub trait Ring: SemiRing + AdditiveGroup
 where
     Self::E: RingOps,
 {
+    /// The canonical ring homomorphism `Z → R`, sending `n` to `n · 1`.
+    ///
+    /// Computed by double-and-add over the bits of `|n|`, so the cost is logarithmic
+    /// in `n` rather than linear: `O(log n)` additions, not `n` of them.
+    ///
+    /// This is the most abstract level at which the map is total. The doubling needs
+    /// only [`Monoid::identity`] and addition, which a [`SemiRing`] already has, but a
+    /// negative `n` needs an additive inverse — so the map lands on [`Ring`], where
+    /// [`AdditiveGroup`] supplies subtraction.
+    // Takes `&self` despite the `from_` name: the image of `n` depends on the ring,
+    // so there is no context-free constructor to put this on.
+    #[allow(clippy::wrong_self_convention)]
+    fn from_integer<T: Into<BigInt>>(&self, n: T) -> Self::E {
+        let (sign, magnitude) = n.into().into_parts();
+        let mut result = self.zero();
+        let mut addend = self.identity();
+        let bits = magnitude.bits();
+        for i in 0..bits {
+            if magnitude.bit(i) {
+                result = result + addend.clone();
+            }
+            // Skip the final doubling; nothing above the top bit will read it.
+            if i + 1 < bits {
+                addend = addend.clone() + addend;
+            }
+        }
+        match sign {
+            Sign::Minus => self.zero() - result,
+            _ => result,
+        }
+    }
 }
 
 /// Elements that support Euclidean division, yielding `(quotient, remainder)`.
