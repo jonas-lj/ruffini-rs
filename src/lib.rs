@@ -113,6 +113,10 @@ mod tests {
         assert_eq!(zx.zero().degree(), None);
         assert_eq!(zx.identity(), poly(vec![1]));
         assert_eq!(p.degree(), Some(2));
+        // The leading coefficient; the zero polynomial has none.
+        assert_eq!(p.lead(), Some(&int(3)));
+        assert_eq!(poly(vec![1, 2, 0, 0]).lead(), Some(&int(2)));
+        assert_eq!(zx.zero().lead(), None);
         // Display
         assert_eq!(format!("{}", poly(vec![1, 2, 3])), "1 + 2*x + 3*x^{2}");
 

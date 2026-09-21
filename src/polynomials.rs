@@ -88,6 +88,11 @@ where
     R: Ring,
     R::E: RingOps + Eq,
 {
+    /// The coefficient of the highest-degree term, or [`None`] for the zero polynomial.
+    pub fn lead(&self) -> Option<&R::E> {
+        self.coefficients.last()
+    }
+
     /// Degree of the polynomial, or `None` for the zero polynomial.
     pub fn degree(&self) -> Option<usize> {
         if self.coefficients.is_empty() {
@@ -497,10 +502,7 @@ where
         let coeff_ring = &self.ring.coeff_ring;
         let zero_c = coeff_ring.zero();
 
-        let lead_b = divisor
-            .coefficients
-            .last()
-            .expect("division by zero polynomial");
+        let lead_b = divisor.lead().expect("division by zero polynomial");
         let lead_b_inv = coeff_ring
             .invert(lead_b)
             .expect("leading coefficient must be invertible in a field");
@@ -551,8 +553,7 @@ where
 {
     fn unit_part(&self, x: &Self::E) -> Self::E {
         let lead = x
-            .coefficients
-            .last()
+            .lead()
             .cloned()
             .unwrap_or_else(|| self.coeff_ring.identity());
         self.element(vec![lead])
