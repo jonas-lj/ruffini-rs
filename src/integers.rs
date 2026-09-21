@@ -4,9 +4,9 @@ use crate::structures::{
     AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Monoid, QuotientRing, Ring,
     SemiRing, Semigroup, Domain,
 };
-use derive_more::{Add, Display, From, Sub};
+use derive_more::{Add, Display, From, Into, Mul, Sub};
 use num_bigint::BigInt;
-use std::ops::{AddAssign, Mul, MulAssign, SubAssign};
+use std::ops::{AddAssign, MulAssign, SubAssign};
 use std::rc::Rc;
 
 /// Handle for the set of integers; used to construct [`Integer`] values.
@@ -14,7 +14,8 @@ use std::rc::Rc;
 pub struct Integers {}
 
 /// An integer, wrapping [`BigInt`].
-#[derive(Display, From, Clone, PartialEq, Eq, Debug, Add, Sub)]
+#[derive(Display, From, Into, Clone, PartialEq, Eq, Debug, Add, Sub, Mul)]
+#[mul(forward)]
 #[from(BigInt, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize)]
 pub struct Integer(BigInt);
 
@@ -32,13 +33,6 @@ impl Domain for Integers {
 
     fn element<T: Into<Integer>>(&self, value: T) -> Integer {
         value.into()
-    }
-}
-
-impl Mul<Integer> for Integer {
-    type Output = Integer;
-    fn mul(self, rhs: Integer) -> Self::Output {
-        Integer(self.0 * rhs.0)
     }
 }
 
@@ -93,12 +87,6 @@ impl DivRem for Integer {
         let q = &self.0 / &divisor.0;
         let r = &self.0 % &divisor.0;
         (Integer(q), Integer(r))
-    }
-}
-
-impl From<Integer> for BigInt {
-    fn from(value: Integer) -> Self {
-        value.0
     }
 }
 
