@@ -420,7 +420,7 @@ where
             .last()
             .expect("division by zero polynomial");
         let lead_b_inv = coeff_ring
-            .inverse(lead_b)
+            .invert(lead_b)
             .expect("leading coefficient must be invertible in a field");
         let deg_b = divisor.coefficients.len() - 1;
 
@@ -483,7 +483,7 @@ where
             .expect("unit_inverse called on the zero polynomial");
         let c_inv = self
             .coeff_ring
-            .inverse(c)
+            .invert(c)
             .expect("unit_inverse called on a non-unit polynomial");
         self.element(vec![c_inv])
     }

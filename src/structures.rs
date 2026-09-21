@@ -25,9 +25,8 @@ impl<T: Add<Output = T> + Sub<Output = T> + Mul<Output = T>> RingOps for T {}
 pub trait Domain {
     /// The element type carried by this domain.
     ///
-    /// Note the absence of `Eq`: it is required further up, at [`EuclideanDomain`] and
-    /// [`Field`], where algorithms actually test for zero. Element types without a
-    /// decidable equality (constructive reals, say) can still form the lower structures.
+    /// No `Eq`: that is required further up, at [`EuclideanDomain`] and [`Field`],
+    /// whose algorithms test for zero.
     type E: Clone;
 
     /// A representative that this domain knows how to turn into an element. Element types
@@ -92,15 +91,9 @@ pub trait Ring: SemiRing + AdditiveGroup
 where
     Self::E: RingOps,
 {
-    /// The canonical ring homomorphism `Z → R`, sending `n` to `n · 1`.
+    /// The canonical homomorphism `Z → R`, `n ↦ n · 1`, by double-and-add.
     ///
-    /// Computed by double-and-add over the bits of `|n|`, so the cost is logarithmic
-    /// in `n` rather than linear: `O(log n)` additions, not `n` of them.
-    ///
-    /// This is the most abstract level at which the map is total. The doubling needs
-    /// only [`Monoid::identity`] and addition, which a [`SemiRing`] already has, but a
-    /// negative `n` needs an additive inverse — so the map lands on [`Ring`], where
-    /// [`AdditiveGroup`] supplies subtraction.
+    /// On `Ring` rather than `SemiRing` because a negative `n` needs subtraction.
     // Takes `&self` despite the `from_` name: the image of `n` depends on the ring,
     // so there is no context-free constructor to put this on.
     #[allow(clippy::wrong_self_convention)]
@@ -183,8 +176,16 @@ pub trait Field: Ring
 where
     Self::E: RingOps + Eq,
 {
-    /// Returns the multiplicative inverse of `x`, or [`None`] if `x` is the additive identity.
-    fn inverse(&self, x: &Self::E) -> Option<Self::E>;
+    /// Returns the multiplicative inverse of `x`, or [`None`] if `x` is the additive
+    /// identity. This is the method implementors write, and the one to call when the
+    /// argument is an element you already have.
+    fn invert(&self, x: &Self::E) -> Option<Self::E>;
+
+    /// The inverse of the element denoted by a representative, so a literal can be
+    /// inverted directly: `f7.inverse(3)`.
+    fn inverse<T: Into<Self::Repr>>(&self, x: T) -> Option<Self::E> {
+        self.invert(&self.element(x))
+    }
 }
 
 /// An element of a quotient ring `R / (m)`.
@@ -334,6 +335,47 @@ macro_rules! quotient_ring_ops {
 }
 quotient_ring_ops!(Add, add; Sub, sub; Mul, mul);
 
+/// One operator against a plain integer, for a single integer type.
+macro_rules! quotient_ring_int_op {
+    ($int:ty, $op:ident, $method:ident) => {
+        impl<R> $op<$int> for QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: RingOps + DivRem + Eq,
+        {
+            type Output = QuotientRingElement<R>;
+            fn $method(self, rhs: $int) -> Self::Output {
+                let rhs = self.ring.from_integer(rhs);
+                self.$method(rhs)
+            }
+        }
+
+        impl<R> $op<$int> for &QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: RingOps + DivRem + Eq,
+            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
+        {
+            type Output = QuotientRingElement<R>;
+            fn $method(self, rhs: $int) -> Self::Output {
+                let rhs = self.ring.from_integer(rhs);
+                self.$method(&rhs)
+            }
+        }
+    };
+}
+
+/// Arithmetic against a plain integer, which is embedded via [`Ring::from_integer`]
+/// before the operation: `x * 3` means `x * (3 · 1)` in `x`'s own ring.
+macro_rules! quotient_ring_int_ops {
+    ($($int:ty),* $(,)?) => {$(
+        quotient_ring_int_op!($int, Add, add);
+        quotient_ring_int_op!($int, Sub, sub);
+        quotient_ring_int_op!($int, Mul, mul);
+    )*};
+}
+quotient_ring_int_ops!(i64, BigInt);
+
 impl<R> Domain for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
@@ -412,7 +454,7 @@ where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
 {
-    fn inverse(&self, x: &Self::E) -> Option<Self::E> {
+    fn invert(&self, x: &Self::E) -> Option<Self::E> {
         if x == &self.zero() {
             return None;
         }
