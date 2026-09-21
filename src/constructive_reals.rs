@@ -1,26 +1,10 @@
-//! Constructive (computable) real numbers.
+//! Constructive (computable) real numbers, ported from Hans-J. Boehm's `CR`.
 //!
-//! A Rust port of the core of Hans-J. Boehm's `CR` class — the constructive-reals
-//! library underpinning the Android calculator. A [`ConstructiveReal`] is held
-//! lazily as an expression tree; its value is only ever evaluated to a finite,
-//! explicitly requested precision.
+//! A value is an expression tree evaluated only to the precision asked for:
+//! `get_appr(p)` returns `a` with `|a · 2^p − value| < 2^p`.
 //!
-//! ## The approximation contract
-//!
-//! Every node can produce an integer approximation at any binary precision `p`:
-//! `get_appr(p)` returns an integer `a` with `|a · 2^p − value| < 2^p`. The error
-//! is *strictly* below one unit in the last place, which is what makes the
-//! comparison logic sound.
-//!
-//! ## Equality is undecidable
-//!
-//! You cannot in general prove `x == y` for two constructive reals in finite time,
-//! so `ConstructiveReal` implements neither `Eq` nor `PartialEq`. Comparison is a
-//! precision-bounded operation that may answer "undetermined" instead.
-//!
-//! [`ConstructiveReals`] is therefore a [`Ring`](crate::structures::Ring) but not a
-//! [`Field`](crate::structures::Field): `Field::invert` has to test its argument
-//! against zero, which is exactly the undecidable question.
+//! Equality is undecidable, so there is no `Eq`/`PartialEq` and comparison may answer
+//! "undetermined". [`ConstructiveReals`] is a `Ring` but not a `Field`.
 
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, Domain, Monoid, Ring, SemiRing, Semigroup,
@@ -31,14 +15,10 @@ use std::cmp::Ordering;
 use std::ops::{Add, Mul, Neg, Sub};
 use std::rc::Rc;
 
-/// Sentinel returned by [`ConstructiveReal::msd`] when the most significant digit
-/// cannot be located at the requested precision (the value is too close to zero).
+/// Returned by [`ConstructiveReal::msd`] when the value is too close to zero to locate.
 const UNKNOWN_MSD: i32 = i32::MIN;
 
-/// A constructive (computable) real number.
-///
-/// Cheap to clone — it is a reference-counted handle onto a shared expression
-/// node. See the [module docs](self) for the approximation contract.
+/// A constructive real. Cheap to clone: a refcounted handle onto a shared node.
 #[derive(Clone)]
 pub struct ConstructiveReal(Rc<Node>);
 
@@ -84,15 +64,13 @@ impl AdditiveGroup for ConstructiveReals {}
 impl SemiRing for ConstructiveReals {}
 impl Ring for ConstructiveReals {}
 
-/// A shared expression node: the operation plus a cache of the best
-/// approximation computed so far.
+/// An expression node: the operation plus its best approximation so far.
 struct Node {
     op: Op,
     cache: RefCell<Option<Approximation>>,
 }
 
-/// The best-known approximation of a node: `max_appr` is `get_appr(min_prec)`.
-/// Any coarser precision can be served by scaling this down.
+/// `max_appr` is `get_appr(min_prec)`; coarser precisions scale down from it.
 struct Approximation {
     min_prec: i32,
     max_appr: BigInt,
@@ -128,8 +106,7 @@ fn abs(v: &BigInt) -> BigInt {
     }
 }
 
-/// Shift `v` by `n` bit positions. `n >= 0` shifts left (exact); `n < 0` shifts
-/// right with round-half-up, matching Boehm's `scale`.
+/// Shift `v` by `n` bits. Right shifts round half-up, matching Boehm's `scale`.
 fn scale(v: BigInt, n: i32) -> BigInt {
     if n >= 0 {
         v << (n as usize)
@@ -140,8 +117,7 @@ fn scale(v: BigInt, n: i32) -> BigInt {
     }
 }
 
-/// Floor of the square root of a non-negative integer, by Newton's method.
-/// Returns zero for non-positive input.
+/// Floor square root by Newton's method; zero for non-positive input.
 fn isqrt(n: &BigInt) -> BigInt {
     if n.sign() != Sign::Plus {
         return BigInt::from(0);
@@ -181,17 +157,13 @@ impl ConstructiveReal {
         ConstructiveReal::new(Op::Shift(self.clone(), -n))
     }
 
-    /// The non-negative square root.
-    ///
-    /// The operand is assumed to be non-negative. Negativity of a constructive
-    /// real is not decidable, so a negative operand yields an unspecified
-    /// result rather than an error.
+    /// The non-negative square root. A negative operand is unspecified rather than an
+    /// error, since negativity is not decidable.
     pub fn sqrt(&self) -> ConstructiveReal {
         ConstructiveReal::new(Op::Sqrt(self.clone()))
     }
 
-    /// Return an integer `a` with `|a · 2^precision − value| < 2^precision`,
-    /// reusing or refining the cached approximation.
+    /// An `a` with `|a · 2^precision − value| < 2^precision`, reusing the cache.
     fn get_appr(&self, precision: i32) -> BigInt {
         {
             let cache = self.0.cache.borrow();
@@ -237,8 +209,7 @@ impl ConstructiveReal {
         }
     }
 
-    /// Most significant digit position, derived from the *current* cached
-    /// approximation. Requires the cache to be populated.
+    /// Most significant digit position. Requires a populated cache.
     fn known_msd(&self) -> i32 {
         let cache = self.0.cache.borrow();
         let appr = cache
@@ -248,8 +219,8 @@ impl ConstructiveReal {
         appr.min_prec + length - 1
     }
 
-    /// Locate the most significant digit, refining to precision `n` if needed.
-    /// Returns [`UNKNOWN_MSD`] if the value is indistinguishable from zero at `n`.
+    /// Most significant digit, refining to `n`. [`UNKNOWN_MSD`] if indistinguishable
+    /// from zero there.
     fn msd(&self, n: i32) -> i32 {
         let needs_refine = match self.0.cache.borrow().as_ref() {
             None => true,
@@ -266,8 +237,7 @@ impl ConstructiveReal {
         self.known_msd()
     }
 
-    /// Compare with `other` at a single precision. `Some(_)` when the difference
-    /// is resolvable at `precision`; `None` when the values are too close to tell.
+    /// Compare at one precision; `None` when the values are too close to tell.
     pub fn compare_at(&self, other: &ConstructiveReal, precision: i32) -> Option<Ordering> {
         let needed = precision - 1;
         let this_appr = self.get_appr(needed);
@@ -282,11 +252,8 @@ impl ConstructiveReal {
         }
     }
 
-    /// Compare with `other`, refining precision geometrically from `-20` until
-    /// resolvable or `precision` passes `min_precision`.
-    ///
-    /// Returns `None` if still unresolved — the values may be equal, which is
-    /// undecidable, so a bound is required to guarantee termination.
+    /// Compare, refining from `-20` until resolvable or past `min_precision`. `None` if
+    /// unresolved: equality is undecidable, so the bound is what guarantees termination.
     pub fn compare(&self, other: &ConstructiveReal, min_precision: i32) -> Option<Ordering> {
         let mut a = -20;
         loop {
@@ -300,10 +267,8 @@ impl ConstructiveReal {
         }
     }
 
-    /// The sign of the number (`-1`, `0`, `1`), if resolvable at `precision`.
-    ///
-    /// A nonzero answer is always correct. `None` means the value is too close
-    /// to zero to determine the sign at this precision.
+    /// The sign (`-1`, `0`, `1`) if resolvable at `precision`. A nonzero answer is
+    /// always correct.
     pub fn sign_at(&self, precision: i32) -> Option<i32> {
         match self.get_appr(precision - 1).sign() {
             Sign::Minus => Some(-1),
@@ -312,10 +277,8 @@ impl ConstructiveReal {
         }
     }
 
-    /// Render as a decimal string with `digits` digits after the point.
-    ///
-    /// The final digit may be off by one for non-dyadic values — an inherent
-    /// consequence of finite approximation. Dyadic values render exactly.
+    /// Render with `digits` digits after the point. The last digit may be off by one
+    /// for non-dyadic values.
     pub fn to_decimal(&self, digits: u32) -> String {
         let ten = BigInt::from(10);
         let mut scale_factor = BigInt::from(1);
@@ -347,8 +310,8 @@ impl ConstructiveReal {
     }
 }
 
-/// Approximate a product, following Boehm's `mult_CR`: it works at reduced
-/// precision on each factor, sized by the other factor's magnitude (msd).
+/// Approximate a product, following Boehm's `mult_CR`: each factor at a reduced
+/// precision sized by the other's msd.
 fn approximate_mul(op1: &ConstructiveReal, op2: &ConstructiveReal, p: i32) -> BigInt {
     let half_prec = (p >> 1) - 1;
 
