@@ -17,6 +17,7 @@
 pub struct ReadmeDoctests;
 
 pub mod constructive_reals;
+pub mod euclidean;
 pub mod integers;
 pub mod polynomials;
 pub mod structures;
@@ -83,24 +84,6 @@ mod tests {
         assert_eq!(f7.order(), BigInt::from(7));
     }
 
-    #[test]
-    fn extended_gcd_canonicalises_via_unit_part() {
-        let z = Integers::default();
-        // gcd(4, 7) = 1, regardless of sign of inputs — canonical gcd is positive.
-        let (g, s, t) = z.extended_gcd(int(4), int(7));
-        assert_eq!(g, int(1));
-        assert_eq!(&s * &int(4) + &t * &int(7), int(1));
-
-        // With a negative input, the raw Euclidean step would land on gcd = -1;
-        // canonicalisation should still produce gcd = 1.
-        let (g, s, t) = z.extended_gcd(int(-4), int(7));
-        assert_eq!(g, int(1));
-        assert_eq!(&s * &int(-4) + &t * &int(7), int(1));
-
-        // Non-coprime: gcd(6, 10) = 2.
-        let (g, _, _) = z.extended_gcd(int(6), int(10));
-        assert_eq!(g, int(2));
-    }
 
     #[test]
     fn polynomial_ring_z_x() {

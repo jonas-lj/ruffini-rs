@@ -146,28 +146,13 @@ where
     /// when the input is a unit of the domain (e.g. produced by [`Self::unit_part`]).
     fn unit_inverse(&self, u: &Self::E) -> Self::E;
 
-    /// Iterative extended Euclidean algorithm. Returns `(gcd, x, y)` such that
-    /// `x * a + y * b = gcd`, with `gcd` canonicalised via [`Self::unit_part`] so
-    /// that coprime inputs always yield `gcd == identity`.
-    fn extended_gcd(&self, a: Self::E, b: Self::E) -> (Self::E, Self::E, Self::E) {
-        let (mut old_r, mut r) = (a, b);
-        let (mut old_s, mut s) = (self.identity(), self.zero());
-        let (mut old_t, mut t) = (self.zero(), self.identity());
-        let zero = self.zero();
-        while r != zero {
-            let (q, new_r) = old_r.div_rem(&r);
-            old_r = std::mem::replace(&mut r, new_r);
-            let new_s = old_s - q.clone() * s.clone();
-            old_s = std::mem::replace(&mut s, new_s);
-            let new_t = old_t - q * t.clone();
-            old_t = std::mem::replace(&mut t, new_t);
-        }
-        let u_inv = self.unit_inverse(&self.unit_part(&old_r));
-        (
-            old_r * u_inv.clone(),
-            old_s * u_inv.clone(),
-            old_t * u_inv,
-        )
+    /// Returns `(gcd, x, y)` with `x * a + y * b == gcd`. See
+    /// [`crate::euclidean::extended_gcd`], which this forwards to.
+    fn extended_gcd(&self, a: Self::E, b: Self::E) -> (Self::E, Self::E, Self::E)
+    where
+        Self: Sized,
+    {
+        crate::euclidean::extended_gcd(self, a, b)
     }
 }
 
