@@ -12,6 +12,18 @@ use std::rc::Rc;
 pub trait Set: Clone {
     /// The element type carried by this set.
     type E: Clone + Eq;
+
+    /// A representative that this set knows how to turn into an element. Element types
+    /// that carry a ring handle can't implement `From`, so the set supplies the conversion.
+    type Repr;
+
+    /// Builds an element of this set from a representative.
+    fn element<T: Into<Self::Repr>>(&self, value: T) -> Self::E;
+
+    /// Tests whether two representatives denote the same element of this set.
+    fn eq<F: Into<Self::Repr>, G: Into<Self::Repr>>(&self, a: F, b: G) -> bool {
+        self.element(a) == self.element(b)
+    }
 }
 
 /// A set whose elements form a semigroup under multiplication.
@@ -206,62 +218,71 @@ where
 {
 }
 
-impl<R> Add for QuotientRingElement<R>
-where
-    R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
-{
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
-            "QuotientRingElement operands belong to different quotient rings"
-        );
-        let value = self.ring.reduce(self.value + rhs.value);
-        QuotientRingElement {
-            value,
-            ring: self.ring,
+/// Arithmetic over every owned/borrowed operand combination.
+///
+/// The borrowed forms need the underlying ring's elements to support reference ops,
+/// so `&a + &b` builds the result without copying either operand.
+macro_rules! quotient_ring_ops {
+    ($($op:ident, $method:ident);* $(;)?) => {$(
+        impl<R> $op for QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+        {
+            type Output = Self;
+            fn $method(self, rhs: Self) -> Self::Output {
+                debug_assert!(
+                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    "QuotientRingElement operands belong to different quotient rings"
+                );
+                let value = self.ring.reduce(self.value.$method(rhs.value));
+                QuotientRingElement { value, ring: self.ring }
+            }
         }
-    }
-}
 
-impl<R> Sub for QuotientRingElement<R>
-where
-    R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
-{
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self::Output {
-        debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
-            "QuotientRingElement operands belong to different quotient rings"
-        );
-        let value = self.ring.reduce(self.value - rhs.value);
-        QuotientRingElement {
-            value,
-            ring: self.ring,
+        impl<R> $op<&QuotientRingElement<R>> for &QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
+        {
+            type Output = QuotientRingElement<R>;
+            fn $method(self, rhs: &QuotientRingElement<R>) -> Self::Output {
+                debug_assert!(
+                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    "QuotientRingElement operands belong to different quotient rings"
+                );
+                let value = self.ring.reduce((&self.value).$method(&rhs.value));
+                QuotientRingElement { value, ring: Rc::clone(&self.ring) }
+            }
         }
-    }
-}
 
-impl<R> Mul for QuotientRingElement<R>
-where
-    R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
-{
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self::Output {
-        debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
-            "QuotientRingElement operands belong to different quotient rings"
-        );
-        let value = self.ring.reduce(self.value * rhs.value);
-        QuotientRingElement {
-            value,
-            ring: self.ring,
+        impl<R> $op<&QuotientRingElement<R>> for QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
+        {
+            type Output = QuotientRingElement<R>;
+            fn $method(self, rhs: &QuotientRingElement<R>) -> Self::Output {
+                (&self).$method(rhs)
+            }
         }
-    }
+
+        impl<R> $op<QuotientRingElement<R>> for &QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
+            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
+        {
+            type Output = QuotientRingElement<R>;
+            fn $method(self, rhs: QuotientRingElement<R>) -> Self::Output {
+                self.$method(&rhs)
+            }
+        }
+    )*};
 }
+quotient_ring_ops!(Add, add; Sub, sub; Mul, mul);
 
 impl<R> Set for Rc<QuotientRing<R>>
 where
@@ -269,6 +290,11 @@ where
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
 {
     type E = QuotientRingElement<R>;
+    type Repr = R::E;
+
+    fn element<T: Into<R::E>>(&self, value: T) -> Self::E {
+        QuotientRingElement::new(self, value.into())
+    }
 }
 
 impl<R> Semigroup for Rc<QuotientRing<R>>

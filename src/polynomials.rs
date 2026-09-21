@@ -189,6 +189,124 @@ where
     }
 }
 
+/// Coefficient-wise addition of two borrowed polynomials; the shorter one is padded
+/// by carrying its counterpart's remaining coefficients through unchanged.
+impl<R> Add<&Polynomial<R>> for &Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    for<'c> &'c R::E: Add<&'c R::E, Output = R::E>,
+{
+    type Output = Polynomial<R>;
+    fn add(self, rhs: &Polynomial<R>) -> Self::Output {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "Polynomial operands belong to different rings"
+        );
+        let (a, b) = (&self.coefficients, &rhs.coefficients);
+        let mut result = Vec::with_capacity(a.len().max(b.len()));
+        for i in 0..a.len().max(b.len()) {
+            match (a.get(i), b.get(i)) {
+                (Some(x), Some(y)) => result.push(x + y),
+                (Some(x), None) | (None, Some(x)) => result.push(x.clone()),
+                (None, None) => unreachable!("index is below both lengths"),
+            }
+        }
+        Polynomial::new(&self.ring, result)
+    }
+}
+
+/// As [`Add`], except a coefficient present only in `rhs` is negated as `0 - y`.
+impl<R> Sub<&Polynomial<R>> for &Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    for<'c> &'c R::E: Sub<&'c R::E, Output = R::E>,
+{
+    type Output = Polynomial<R>;
+    fn sub(self, rhs: &Polynomial<R>) -> Self::Output {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "Polynomial operands belong to different rings"
+        );
+        let zero = self.ring.coeff_ring.zero();
+        let (a, b) = (&self.coefficients, &rhs.coefficients);
+        let mut result = Vec::with_capacity(a.len().max(b.len()));
+        for i in 0..a.len().max(b.len()) {
+            match (a.get(i), b.get(i)) {
+                (Some(x), Some(y)) => result.push(x - y),
+                (Some(x), None) => result.push(x.clone()),
+                (None, Some(y)) => result.push(&zero - y),
+                (None, None) => unreachable!("index is below both lengths"),
+            }
+        }
+        Polynomial::new(&self.ring, result)
+    }
+}
+
+/// Schoolbook convolution of the coefficient vectors.
+impl<R> Mul<&Polynomial<R>> for &Polynomial<R>
+where
+    R: Ring,
+    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+    for<'c> &'c R::E: Add<&'c R::E, Output = R::E> + Mul<&'c R::E, Output = R::E>,
+{
+    type Output = Polynomial<R>;
+    fn mul(self, rhs: &Polynomial<R>) -> Self::Output {
+        debug_assert!(
+            Rc::ptr_eq(&self.ring, &rhs.ring),
+            "Polynomial operands belong to different rings"
+        );
+        if self.coefficients.is_empty() || rhs.coefficients.is_empty() {
+            return Polynomial {
+                coefficients: Vec::new(),
+                ring: Rc::clone(&self.ring),
+            };
+        }
+        let n = self.coefficients.len();
+        let m = rhs.coefficients.len();
+        let zero = self.ring.coeff_ring.zero();
+        let mut result: Vec<R::E> = (0..n + m - 1).map(|_| zero.clone()).collect();
+        for i in 0..n {
+            for j in 0..m {
+                let term = &self.coefficients[i] * &rhs.coefficients[j];
+                result[i + j] = &result[i + j] + &term;
+            }
+        }
+        Polynomial::new(&self.ring, result)
+    }
+}
+
+/// The mixed owned/borrowed combinations, forwarded to the fully borrowed impls above.
+macro_rules! polynomial_mixed_ops {
+    ($($op:ident, $method:ident);* $(;)?) => {$(
+        impl<R> $op<&Polynomial<R>> for Polynomial<R>
+        where
+            R: Ring,
+            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+            for<'c> &'c Polynomial<R>: $op<&'c Polynomial<R>, Output = Polynomial<R>>,
+        {
+            type Output = Polynomial<R>;
+            fn $method(self, rhs: &Polynomial<R>) -> Self::Output {
+                (&self).$method(rhs)
+            }
+        }
+
+        impl<R> $op<Polynomial<R>> for &Polynomial<R>
+        where
+            R: Ring,
+            R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
+            for<'c> &'c Polynomial<R>: $op<&'c Polynomial<R>, Output = Polynomial<R>>,
+        {
+            type Output = Polynomial<R>;
+            fn $method(self, rhs: Polynomial<R>) -> Self::Output {
+                self.$method(&rhs)
+            }
+        }
+    )*};
+}
+polynomial_mixed_ops!(Add, add; Sub, sub; Mul, mul);
+
 impl<R> fmt::Display for Polynomial<R>
 where
     R: Ring,
@@ -218,6 +336,11 @@ where
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
 {
     type E = Polynomial<R>;
+    type Repr = Vec<R::E>;
+
+    fn element<T: Into<Vec<R::E>>>(&self, coefficients: T) -> Self::E {
+        Polynomial::new(self, coefficients.into())
+    }
 }
 
 impl<R> Semigroup for Rc<PolynomialRing<R>>
