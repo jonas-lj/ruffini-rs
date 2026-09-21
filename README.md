@@ -22,6 +22,9 @@ Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Fi
 - **`PolynomialRing<R>`** — `R[x]`. When `R: Field` this is itself a Euclidean
   domain, so you can take quotients of polynomial rings by irreducible
   polynomials and chain the construction up to `F_{p^k}`.
+- **`ConstructiveReals`** — computable reals, held lazily as expression trees and
+  evaluated to any requested precision. Equality is undecidable, so they form a
+  `Ring` but not a `Field`; see `cargo run --example sqrt2`.
 
 `Domain::E` does not require `Eq` — only `EuclideanDomain` and `Field` do, since
 those are where an algorithm tests for zero.
