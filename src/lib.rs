@@ -30,7 +30,6 @@ pub mod structures;
 #[cfg(test)]
 mod tests {
     use crate::integers::{Integer, Integers};
-    use crate::polynomials::PolynomialRing;
     use crate::structures::{
         CommutativeMonoid, DivRem, Domain, EuclideanDomain, Field, Monoid, Ring,
     };
@@ -92,7 +91,7 @@ mod tests {
 
     #[test]
     fn polynomial_ring_z_x() {
-        let zx = PolynomialRing::new(Integers::default());
+        let zx = Integers::default().polynomials();
         let poly = |coeffs: Vec<i64>| zx.element(coeffs.into_iter().map(int).collect::<Vec<_>>());
 
         let p = poly(vec![1, 2, 3]); // 1 + 2x + 3x^2
@@ -114,12 +113,16 @@ mod tests {
         assert_eq!(p.degree(), Some(2));
         // Display
         assert_eq!(format!("{}", poly(vec![1, 2, 3])), "1 + 2*x + 3*x^{2}");
+
+        // The constructor composes: Z[x][y].
+        let zxy = zx.polynomials();
+        assert_eq!(zxy.element(vec![p.clone(), zx.identity()]).degree(), Some(1));
     }
 
     #[test]
     fn polynomial_division_in_f7_x() {
         let f7 = Integers::modulo(7);
-        let f7x = PolynomialRing::new(f7.clone());
+        let f7x = f7.polynomials();
         let poly = |coeffs: Vec<i64>| {
             f7x.element(coeffs.into_iter().map(|n| f7.element(n)).collect::<Vec<_>>())
         };
@@ -144,7 +147,7 @@ mod tests {
     #[test]
     fn polynomial_gcd_in_f7_x_is_monic() {
         let f7 = Integers::modulo(7);
-        let f7x = PolynomialRing::new(f7.clone());
+        let f7x = f7.polynomials();
         let poly = |coeffs: Vec<i64>| {
             f7x.element(coeffs.into_iter().map(|n| f7.element(n)).collect::<Vec<_>>())
         };
@@ -171,7 +174,7 @@ mod tests {
     #[test]
     fn polynomial_over_f7() {
         let f7 = Integers::modulo(7);
-        let f7x = PolynomialRing::new(f7.clone());
+        let f7x = f7.polynomials();
         let poly = |coeffs: Vec<i64>| {
             f7x.element(coeffs.into_iter().map(|n| f7.element(n)).collect::<Vec<_>>())
         };
@@ -221,7 +224,7 @@ mod tests {
         assert_eq!(n, int(40));
 
         // Same for polynomials, where the integer becomes a constant polynomial.
-        let zx = PolynomialRing::new(Integers::default());
+        let zx = Integers::default().polynomials();
         let p = zx.element(vec![int(1), int(2)]); // 1 + 2x
         assert_eq!(&p * 3, zx.element(vec![int(3), int(6)]));
         assert_eq!(&p + 4, zx.element(vec![int(5), int(2)]));

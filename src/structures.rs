@@ -127,6 +127,17 @@ where
             _ => result,
         }
     }
+
+    /// The polynomial ring `Self[x]`.
+    ///
+    /// Needs `Eq` on the elements, which polynomials require to trim trailing zeros.
+    fn polynomials(&self) -> Rc<crate::polynomials::PolynomialRing<Self>>
+    where
+        Self: Clone + Sized,
+        Self::E: Eq,
+    {
+        crate::polynomials::PolynomialRing::new(self.clone())
+    }
 }
 
 /// Elements that support Euclidean division, yielding `(quotient, remainder)`.
