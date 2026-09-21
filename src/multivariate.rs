@@ -5,8 +5,7 @@
 //! variables costs only what its nonzero terms cost.
 
 use crate::structures::{
-    AdditiveGroup, CommutativeMonoid, DivRem, Domain, Field, Monoid, Ring, RingOps, SemiRing,
-    Semigroup,
+    AdditiveGroup, CommutativeMonoid, Domain, Field, Monoid, Ring, RingOps, SemiRing, Semigroup,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -31,10 +30,11 @@ pub fn divide(m: &Monomial, divisor: &Monomial) -> Monomial {
     m.iter().zip(divisor).map(|(e, d)| e - d).collect()
 }
 
-/// A total order on monomials, used to pick leading terms.
+/// A total order on monomials.
 ///
-/// Storage is keyed by plain exponent-vector order regardless; this is what division
-/// and [`MultivariatePolynomial::lead`] compare with.
+/// Passed to the algorithms that need one rather than held by the ring: the order
+/// changes what division returns, but not what the ring is. Storage stays keyed by
+/// plain exponent-vector order, which only has to be canonical.
 pub trait MonomialOrder: fmt::Debug {
     fn cmp(&self, a: &Monomial, b: &Monomial) -> Ordering;
 }
@@ -68,7 +68,6 @@ where
 {
     coeff_ring: R,
     variables: usize,
-    order: Rc<dyn MonomialOrder>,
 }
 
 /// An element of [`MultivariatePolynomialRing`].
@@ -89,27 +88,12 @@ where
     R: Ring,
     R::E: RingOps + Eq,
 {
-    /// Construct `R[x_0, .., x_{n-1}]`, ordering monomials lexicographically.
+    /// Construct `R[x_0, .., x_{n-1}]`.
     pub fn new(coeff_ring: R, variables: usize) -> Rc<Self> {
-        Self::with_order(coeff_ring, variables, Lex)
-    }
-
-    /// Construct `R[x_0, .., x_{n-1}]` under a given monomial order.
-    pub fn with_order(
-        coeff_ring: R,
-        variables: usize,
-        order: impl MonomialOrder + 'static,
-    ) -> Rc<Self> {
         Rc::new(MultivariatePolynomialRing {
             coeff_ring,
             variables,
-            order: Rc::new(order),
         })
-    }
-
-    /// The monomial order this ring compares leading terms with.
-    pub fn order(&self) -> &dyn MonomialOrder {
-        self.order.as_ref()
     }
 
     /// The coefficient ring.
@@ -144,11 +128,9 @@ where
         self.terms.iter()
     }
 
-    /// The greatest term under the ring's monomial order, or [`None`] if zero.
-    pub fn lead(&self) -> Option<(&Monomial, &R::E)> {
-        self.terms
-            .iter()
-            .max_by(|(a, _), (b, _)| self.ring.order.cmp(a, b))
+    /// The greatest term under `order`, or [`None`] for the zero polynomial.
+    pub fn lead(&self, order: &impl MonomialOrder) -> Option<(&Monomial, &R::E)> {
+        self.terms.iter().max_by(|(a, _), (b, _)| order.cmp(a, b))
     }
 
     /// Total degree, or [`None`] for the zero polynomial.
@@ -185,20 +167,24 @@ where
     /// Divides by several polynomials at once, returning one quotient each and a
     /// remainder, with `self == sum q_i * divisors_i + remainder`.
     ///
-    /// No term of the remainder is divisible by any divisor's leading monomial. Unlike
-    /// the univariate case the result depends on the order of `divisors`, which is why
-    /// this is not a Euclidean division and the ring is not a [`EuclideanDomain`].
+    /// No term of the remainder is divisible by any divisor's leading monomial. The
+    /// result depends both on `order` and on the order of `divisors`, which is why this
+    /// is not a Euclidean division and the ring is not a [`EuclideanDomain`].
     ///
     /// # Panics
     /// If any divisor is zero.
-    pub fn divide(&self, divisors: &[Self]) -> (Vec<Self>, Self) {
+    pub fn divide(
+        &self,
+        divisors: &[Self],
+        order: &impl MonomialOrder,
+    ) -> (Vec<Self>, Self) {
         let ring = &self.ring;
         let coeff_ring = &ring.coeff_ring;
 
         let leads: Vec<(Monomial, R::E)> = divisors
             .iter()
             .map(|g| {
-                let (m, c) = g.lead().expect("division by the zero polynomial");
+                let (m, c) = g.lead(order).expect("division by the zero polynomial");
                 (
                     m.clone(),
                     coeff_ring
@@ -213,7 +199,7 @@ where
         let mut p = self.clone();
 
         // Each step strips the leading term of `p`, so the order decreases and this ends.
-        while let Some((lead_m, lead_c)) = p.lead().map(|(m, c)| (m.clone(), c.clone())) {
+        while let Some((lead_m, lead_c)) = p.lead(order).map(|(m, c)| (m.clone(), c.clone())) {
             match leads.iter().position(|(m, _)| divides(m, &lead_m)) {
                 Some(i) => {
                     let factor = ring.element(vec![(
@@ -231,18 +217,6 @@ where
             }
         }
         (quotients, remainder)
-    }
-}
-
-/// Division by a single polynomial, as [`MultivariatePolynomial::divide`] with one divisor.
-impl<R> DivRem for MultivariatePolynomial<R>
-where
-    R: Field,
-    R::E: RingOps + Eq,
-{
-    fn div_rem(&self, divisor: &Self) -> (Self, Self) {
-        let (mut quotients, remainder) = self.divide(std::slice::from_ref(divisor));
-        (quotients.remove(0), remainder)
     }
 }
 
@@ -485,10 +459,7 @@ where
         if self.terms.is_empty() {
             return write!(f, "0");
         }
-        // Highest term first, under the ring's order.
-        let mut terms: Vec<_> = self.terms.iter().collect();
-        terms.sort_by(|(a, _), (b, _)| self.ring.order.cmp(b, a));
-        for (n, (monomial, c)) in terms.into_iter().enumerate() {
+        for (n, (monomial, c)) in self.terms.iter().enumerate() {
             if n > 0 {
                 write!(f, " + ")?;
             }
@@ -514,7 +485,6 @@ where
 mod tests {
     use super::*;
     use crate::integers::{Integer, Integers};
-    use crate::structures::QuotientRing;
     use crate::polynomials::RingExt;
 
     fn int(n: i64) -> Integer {
@@ -592,22 +562,15 @@ mod tests {
 
     #[test]
     fn monomial_order_decides_the_leading_term() {
-        // x_0^2 vs x_0*x_1^2: lex prefers the higher power of x_0, graded prefers
-        // the higher total degree.
-        let lex = Integers::modulo(7).multi_polynomials(2);
-        let graded = MultivariatePolynomialRing::with_order(Integers::modulo(7), 2, GradedLex);
+        // x_0^2 vs x_0*x_1^2: lex prefers the higher power of x_0, graded the higher
+        // total degree. Same ring, same polynomial - only the order passed in differs.
+        let r = Integers::modulo(7).multi_polynomials(2);
+        let c = r.coefficients().identity();
+        let p = r.element(vec![(vec![2, 0], c.clone()), (vec![1, 2], c)]);
 
-        let terms = |r: &Rc<MultivariatePolynomialRing<Rc<QuotientRing<Integers>>>>| {
-            let c = r.coefficients().identity();
-            r.element(vec![(vec![2, 0], c.clone()), (vec![1, 2], c)])
-        };
-
-        assert_eq!(terms(&lex).lead().unwrap().0, &vec![2, 0]);
-        assert_eq!(terms(&graded).lead().unwrap().0, &vec![1, 2]);
-
-        // Display follows suit, highest term first.
-        assert!(format!("{:?}", lex.order()).contains("Lex"));
-        assert_eq!(graded.zero().lead(), None);
+        assert_eq!(p.lead(&Lex).unwrap().0, &vec![2, 0]);
+        assert_eq!(p.lead(&GradedLex).unwrap().0, &vec![1, 2]);
+        assert_eq!(r.zero().lead(&Lex), None);
     }
 
     #[test]
@@ -627,7 +590,8 @@ mod tests {
         // x^2 - y^2 divided by x - y is exactly x + y.
         let f = r.element(vec![mono(vec![2, 0], 1), mono(vec![0, 2], -1)]);
         let g = r.element(vec![mono(vec![1, 0], 1), mono(vec![0, 1], -1)]);
-        let (q, rem) = f.div_rem(&g);
+        let (quotients, rem) = f.divide(std::slice::from_ref(&g), &Lex);
+        let q = quotients.into_iter().next().unwrap();
         assert_eq!(q, r.element(vec![mono(vec![1, 0], 1), mono(vec![0, 1], 1)]));
         assert_eq!(rem, r.zero());
         assert_eq!(q * g.clone() + rem, f);
@@ -641,7 +605,7 @@ mod tests {
         ]);
         let g1 = r.element(vec![mono(vec![1, 1], 1), mono(vec![0, 0], -1)]);
         let g2 = r.element(vec![mono(vec![0, 2], 1), mono(vec![0, 0], -1)]);
-        let (quotients, remainder) = f.divide(&[g1.clone(), g2.clone()]);
+        let (quotients, remainder) = f.divide(&[g1.clone(), g2.clone()], &Lex);
         assert_eq!(
             quotients[0],
             r.element(vec![mono(vec![1, 0], 1), mono(vec![0, 1], 1)])
@@ -661,16 +625,24 @@ mod tests {
             quotients[0].clone() * g1.clone() + quotients[1].clone() * g2.clone() + remainder.clone();
         assert_eq!(reconstructed, f);
         for (m, _) in remainder.terms() {
-            assert!(!divides(g1.lead().unwrap().0, m));
-            assert!(!divides(g2.lead().unwrap().0, m));
+            assert!(!divides(g1.lead(&Lex).unwrap().0, m));
+            assert!(!divides(g2.lead(&Lex).unwrap().0, m));
         }
 
         // Dividing by a constant scales; dividing something smaller leaves it whole.
         let three = r.element(vec![mono(vec![0, 0], 3)]);
-        assert_eq!(f.div_rem(&three).0 * three.clone(), f);
+        let (q3, _) = f.divide(std::slice::from_ref(&three), &Lex);
+        assert_eq!(q3[0].clone() * three, f);
+
+        // Nothing divisible: the dividend falls through to the remainder.
         let x = r.variable(0);
         let y_squared = r.element(vec![mono(vec![0, 2], 1)]);
-        assert_eq!(x.div_rem(&y_squared), (r.zero(), x.clone()));
+        let (qs, rem) = x.divide(&[y_squared], &Lex);
+        assert_eq!((qs[0].clone(), rem), (r.zero(), x.clone()));
+
+        // A different order can give a different decomposition; the identity still holds.
+        let (qs, rem) = f.divide(&[g1.clone(), g2.clone()], &GradedLex);
+        assert_eq!(qs[0].clone() * g1 + qs[1].clone() * g2 + rem, f);
     }
 
     #[test]
