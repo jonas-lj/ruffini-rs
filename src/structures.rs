@@ -6,7 +6,7 @@
 //! itself, so a single element type can participate in multiple structures.
 
 use num_bigint::{BigInt, Sign};
-use std::ops::{Add, Mul, MulAssign, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 use std::rc::Rc;
 
 /// The ring operations, bundled so the element bound can be written once per `where`
@@ -361,22 +361,39 @@ macro_rules! quotient_ring_int_ops {
 }
 quotient_ring_int_ops!(i64, BigInt);
 
-/// Multiplies in place, reading both operands by reference so neither is cloned.
-impl<R> MulAssign<&QuotientRingElement<R>> for QuotientRingElement<R>
-where
-    R: EuclideanDomain,
-    R::E: RingOps + DivRem + Eq,
-    for<'c> &'c R::E: Mul<&'c R::E, Output = R::E>,
-{
-    fn mul_assign(&mut self, rhs: &QuotientRingElement<R>) {
-        debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
-            "QuotientRingElement operands belong to different quotient rings"
-        );
-        let value = self.ring.reduce(&self.value * &rhs.value);
-        self.value = value;
-    }
+/// Compound assignment, reading both operands by reference so neither is cloned.
+macro_rules! quotient_ring_assign_ops {
+    ($($op:ident, $method:ident, $base:ident, $base_method:ident);* $(;)?) => {$(
+        impl<R> $op<&QuotientRingElement<R>> for QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: RingOps + DivRem + Eq,
+            for<'c> &'c R::E: $base<&'c R::E, Output = R::E>,
+        {
+            fn $method(&mut self, rhs: &QuotientRingElement<R>) {
+                debug_assert!(
+                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    "QuotientRingElement operands belong to different quotient rings"
+                );
+                let value = self.ring.reduce((&self.value).$base_method(&rhs.value));
+                self.value = value;
+            }
+        }
+
+        impl<R> $op<QuotientRingElement<R>> for QuotientRingElement<R>
+        where
+            R: EuclideanDomain,
+            R::E: RingOps + DivRem + Eq,
+            for<'c> &'c R::E: $base<&'c R::E, Output = R::E>,
+        {
+            fn $method(&mut self, rhs: QuotientRingElement<R>) {
+                self.$method(&rhs);
+            }
+        }
+    )*};
 }
+quotient_ring_assign_ops!(AddAssign, add_assign, Add, add; MulAssign, mul_assign, Mul, mul);
+
 
 impl<R> Domain for Rc<QuotientRing<R>>
 where

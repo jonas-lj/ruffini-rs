@@ -12,7 +12,7 @@ use crate::structures::{
 use num_bigint::{BigInt, Sign};
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::ops::{Add, Mul, MulAssign, Neg, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
 use std::rc::Rc;
 
 /// Returned by [`ConstructiveReal::msd`] when the value is too close to zero to locate.
@@ -364,11 +364,24 @@ impl Mul for ConstructiveReal {
     }
 }
 
-impl MulAssign<&ConstructiveReal> for ConstructiveReal {
-    fn mul_assign(&mut self, rhs: &ConstructiveReal) {
-        *self = ConstructiveReal::new(Op::Mul(self.clone(), rhs.clone()));
-    }
+/// Compound assignment. Cloning a [`ConstructiveReal`] only bumps an `Rc`, so these
+/// just rebuild the node.
+macro_rules! constructive_real_assign_ops {
+    ($($op:ident, $method:ident, $node:ident);* $(;)?) => {$(
+        impl $op<&ConstructiveReal> for ConstructiveReal {
+            fn $method(&mut self, rhs: &ConstructiveReal) {
+                *self = ConstructiveReal::new(Op::$node(self.clone(), rhs.clone()));
+            }
+        }
+
+        impl $op<ConstructiveReal> for ConstructiveReal {
+            fn $method(&mut self, rhs: ConstructiveReal) {
+                *self = ConstructiveReal::new(Op::$node(self.clone(), rhs));
+            }
+        }
+    )*};
 }
+constructive_real_assign_ops!(AddAssign, add_assign, Add; MulAssign, mul_assign, Mul);
 
 #[cfg(test)]
 mod tests {

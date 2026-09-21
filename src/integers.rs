@@ -6,7 +6,7 @@ use crate::structures::{
 };
 use derive_more::{Add, Display, From, Sub};
 use num_bigint::BigInt;
-use std::ops::{Mul, MulAssign};
+use std::ops::{AddAssign, Mul, MulAssign, SubAssign};
 use std::rc::Rc;
 
 /// Handle for the set of integers; used to construct [`Integer`] values.
@@ -42,17 +42,23 @@ impl Mul<Integer> for Integer {
     }
 }
 
-impl MulAssign<&Integer> for Integer {
-    fn mul_assign(&mut self, rhs: &Integer) {
-        self.0 *= &rhs.0;
-    }
-}
+/// Compound assignment, forwarded to [`BigInt`]'s own, so nothing is cloned.
+macro_rules! integer_assign_ops {
+    ($($op:ident, $method:ident);* $(;)?) => {$(
+        impl $op<&Integer> for Integer {
+            fn $method(&mut self, rhs: &Integer) {
+                self.0.$method(&rhs.0);
+            }
+        }
 
-impl MulAssign<Integer> for Integer {
-    fn mul_assign(&mut self, rhs: Integer) {
-        self.0 *= rhs.0;
-    }
+        impl $op<Integer> for Integer {
+            fn $method(&mut self, rhs: Integer) {
+                self.0.$method(rhs.0);
+            }
+        }
+    )*};
 }
+integer_assign_ops!(AddAssign, add_assign; SubAssign, sub_assign; MulAssign, mul_assign);
 
 /// Borrowed operand combinations, forwarded to [`BigInt`]'s own reference ops so that
 /// `&a + &b` allocates the result without copying either input.
