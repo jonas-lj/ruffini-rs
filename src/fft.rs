@@ -49,7 +49,6 @@ where
                 let v = block[j + half].clone() * w.clone();
                 block[j] = u.clone() + v.clone();
                 block[j + half] = u - v;
-                // `w` really is an accumulator, unlike the sums above.
                 w *= &step;
             }
         }
