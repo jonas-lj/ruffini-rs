@@ -8,6 +8,7 @@ use crate::structures::{
     AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Ring, RingOps,
     SemiRing, Semigroup, Domain,
 };
+use itertools::{EitherOrBoth, Itertools};
 use num_bigint::BigInt;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
@@ -136,16 +137,15 @@ where
             Rc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
-        let mut a = self.coefficients.into_iter();
-        let mut b = rhs.coefficients.into_iter();
-        let mut result = Vec::new();
-        loop {
-            match (a.next(), b.next()) {
-                (Some(x), Some(y)) => result.push(x + y),
-                (Some(x), None) | (None, Some(x)) => result.push(x),
-                (None, None) => break,
-            }
-        }
+        let result: Vec<R::E> = self
+            .coefficients
+            .into_iter()
+            .zip_longest(rhs.coefficients)
+            .map(|pair| match pair {
+                EitherOrBoth::Both(x, y) => x + y,
+                EitherOrBoth::Left(x) | EitherOrBoth::Right(x) => x,
+            })
+            .collect();
         self.ring.element(result)
     }
 }
@@ -222,15 +222,15 @@ where
             Rc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
-        let (a, b) = (&self.coefficients, &rhs.coefficients);
-        let mut result = Vec::with_capacity(a.len().max(b.len()));
-        for i in 0..a.len().max(b.len()) {
-            match (a.get(i), b.get(i)) {
-                (Some(x), Some(y)) => result.push(x + y),
-                (Some(x), None) | (None, Some(x)) => result.push(x.clone()),
-                (None, None) => unreachable!("index is below both lengths"),
-            }
-        }
+        let result: Vec<R::E> = self
+            .coefficients
+            .iter()
+            .zip_longest(&rhs.coefficients)
+            .map(|pair| match pair {
+                EitherOrBoth::Both(x, y) => x + y,
+                EitherOrBoth::Left(x) | EitherOrBoth::Right(x) => x.clone(),
+            })
+            .collect();
         self.ring.element(result)
     }
 }
