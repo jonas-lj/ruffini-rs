@@ -50,10 +50,13 @@ use `Domain::element`:
 
 ```rust
 use ruffini::integers::Integers;
-use ruffini::structures::Domain;
+use ruffini::structures::{Domain, Ring};
 
 let f7 = Integers::modulo(7);
 assert_eq!(&f7.element(3) + &f7.element(6), f7.element(2)); // 9 ≡ 2 (mod 7)
+
+let f7x = f7.polynomials(); // F_7[x], and f7x.polynomials() is F_7[x][y]
+assert_eq!(f7x.element(vec![f7.element(1), f7.element(2)]).degree(), Some(1));
 ```
 
 ## Build & test
