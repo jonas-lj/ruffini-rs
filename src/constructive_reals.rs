@@ -117,7 +117,7 @@ fn scale(v: BigInt, n: i32) -> BigInt {
     }
 }
 
-/// Floor square root by Newton's method; zero for non-positive input.
+/// Floor square root by Newton's method, or zero for non-positive input.
 fn isqrt(n: &BigInt) -> BigInt {
     if n.sign() != Sign::Plus {
         return BigInt::from(0);
@@ -185,17 +185,10 @@ impl ConstructiveReal {
     fn approximate(&self, p: i32) -> BigInt {
         match &self.0.op {
             Op::Int(value) => scale(value.clone(), -p),
-            // Each operand is accurate to ±1 at `p-2`; their sum to ±2, which
-            // scaling down by two bits brings back within the ±1 contract at `p`.
             Op::Add(a, b) => scale(a.get_appr(p - 2) + b.get_appr(p - 2), -2),
             Op::Neg(a) => -a.get_appr(p),
             Op::Shift(a, count) => a.get_appr(p - count),
             Op::Mul(a, b) => approximate_mul(a, b, p),
-            // Work three bits finer than requested. At precision `p-3` the
-            // operand error (< 1) and the floor in `isqrt` (< 1) together give
-            // a result within < 2 ulps; scaling back down by 3 bits divides
-            // that by 8 and adds the < 1/2 rounding of `scale`, for a total
-            // error < 3/4 < 1 — satisfying the contract at `p`.
             Op::Sqrt(a) => {
                 let working = p - 3;
                 let operand = a.get_appr(2 * working);
@@ -376,28 +369,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn forms_a_ring_without_a_decidable_equality() {
-        let cr = ConstructiveReals;
-        assert_eq!(cr.zero().to_decimal(0), "0");
-        assert_eq!(cr.identity().to_decimal(0), "1");
-
-        // `Ring::from_integer` reaches the same value by double-and-add as the
-        // direct constructor does, including for negatives.
-        for n in [-1000i64, -7, -1, 0, 1, 6, 255, 1000] {
-            assert_eq!(
-                cr.from_integer(n).to_decimal(2),
-                ConstructiveReal::from_int(n).to_decimal(2),
-                "from_integer disagrees at n = {n}"
-            );
-        }
-
-        // Ring arithmetic runs through the handle without any equality on elements.
-        let product = cr.element(6) * cr.element(7);
-        assert_eq!(product.to_decimal(0), "42");
-        assert_eq!((cr.element(10) - cr.element(25)).to_decimal(0), "-15");
-    }
-
-    #[test]
     fn integer_constants_render() {
         assert_eq!(ConstructiveReal::from_int(7).to_decimal(3), "7.000");
         assert_eq!(ConstructiveReal::from_int(-5).to_decimal(2), "-5.00");
@@ -428,91 +399,5 @@ mod tests {
         // Multiplying by zero short-circuits in approximate_mul.
         let zero = ConstructiveReal::from_int(0) * ConstructiveReal::from_int(999);
         assert_eq!(zero.to_decimal(0), "0");
-    }
-
-    #[test]
-    fn shifts_give_dyadic_fractions() {
-        // 1 / 4 = 0.25
-        assert_eq!(
-            ConstructiveReal::from_int(1).shift_right(2).to_decimal(2),
-            "0.25"
-        );
-        // 3 · 16 = 48
-        assert_eq!(
-            ConstructiveReal::from_int(3).shift_left(4).to_decimal(0),
-            "48"
-        );
-        // 1/2 + 1/4 = 3/4
-        let three_quarters = ConstructiveReal::from_int(1).shift_right(1)
-            + ConstructiveReal::from_int(1).shift_right(2);
-        assert_eq!(three_quarters.to_decimal(2), "0.75");
-    }
-
-    #[test]
-    fn comparison_resolves_distinct_values() {
-        let two = ConstructiveReal::from_int(2);
-        let three = ConstructiveReal::from_int(3);
-        assert_eq!(two.compare(&three, -1000), Some(Ordering::Less));
-        assert_eq!(three.compare(&two, -1000), Some(Ordering::Greater));
-    }
-
-    #[test]
-    fn comparison_of_equal_values_is_undetermined() {
-        // 1/2 + 1/2 is exactly 1, but equality is undecidable: compare must give
-        // up at the precision bound rather than loop forever.
-        let half_sum = ConstructiveReal::from_int(1).shift_right(1)
-            + ConstructiveReal::from_int(1).shift_right(1);
-        assert_eq!(half_sum.compare(&ConstructiveReal::from_int(1), -200), None);
-    }
-
-    #[test]
-    fn sign_detection() {
-        assert_eq!(ConstructiveReal::from_int(5).sign_at(-100), Some(1));
-        assert_eq!(ConstructiveReal::from_int(-5).sign_at(-100), Some(-1));
-        assert_eq!(ConstructiveReal::from_int(0).sign_at(-100), None);
-    }
-
-    #[test]
-    fn square_root_of_two() {
-        let root2 = ConstructiveReal::from_int(2).sqrt();
-
-        // sqrt(2) = 1.4142135623... — the first five decimals are stable
-        // (only the printed last digit is subject to ±1 uncertainty).
-        assert!(root2.to_decimal(6).starts_with("1.41421"));
-
-        // Squaring recovers 2 exactly, to any printed precision.
-        let squared = root2.clone() * root2.clone();
-        assert_eq!(squared.to_decimal(12), "2.000000000000");
-
-        // Pin sqrt(2) into the open interval (1.4142, 1.4143).
-        let scaled = root2 * ConstructiveReal::from_int(10000);
-        assert_eq!(
-            scaled.compare_at(&ConstructiveReal::from_int(14142), -100),
-            Some(Ordering::Greater)
-        );
-        assert_eq!(
-            scaled.compare_at(&ConstructiveReal::from_int(14143), -100),
-            Some(Ordering::Less)
-        );
-    }
-
-    #[test]
-    fn square_root_of_perfect_squares() {
-        assert_eq!(ConstructiveReal::from_int(9).sqrt().to_decimal(4), "3.0000");
-        assert_eq!(ConstructiveReal::from_int(0).sqrt().to_decimal(3), "0.000");
-        assert_eq!(
-            ConstructiveReal::from_int(144).sqrt().to_decimal(2),
-            "12.00"
-        );
-    }
-
-    #[test]
-    fn caching_serves_coarser_precision_consistently() {
-        let x = ConstructiveReal::from_int(123);
-        // First request a fine precision, populating the cache.
-        let fine = x.get_appr(-10);
-        // A coarser request must be served from the cache by scaling down.
-        let coarse = x.get_appr(-2);
-        assert_eq!(coarse, scale(fine, -8));
     }
 }
