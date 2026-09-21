@@ -1,19 +1,19 @@
 //! Exponentiation by square-and-multiply.
 
 use crate::structures::Monoid;
-use std::ops::Mul;
+use std::ops::{Mul, MulAssign};
 
 /// `base^exp`, in `O(log exp)` multiplications. `exp == 0` gives the identity.
 pub fn pow<M>(monoid: &M, base: &M::E, mut exp: usize) -> M::E
 where
     M: Monoid,
-    M::E: Mul<Output = M::E>,
+    M::E: Mul<Output = M::E> + for<'a> MulAssign<&'a M::E>,
 {
     let mut result = monoid.identity();
     let mut base = base.clone();
     while exp > 0 {
         if exp & 1 == 1 {
-            result = result * base.clone();
+            result *= &base;
         }
         exp >>= 1;
         if exp > 0 {
