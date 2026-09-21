@@ -15,19 +15,8 @@ pub struct Integers {}
 
 /// An integer, wrapping [`BigInt`].
 #[derive(Display, From, Clone, PartialEq, Eq, Debug, Add, Sub)]
+#[from(BigInt, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize)]
 pub struct Integer(BigInt);
-
-/// `From<primitive>` for [`Integer`], so plain literals work as representatives.
-macro_rules! integer_from {
-    ($($t:ty),*) => {$(
-        impl From<$t> for Integer {
-            fn from(n: $t) -> Self {
-                Integer(BigInt::from(n))
-            }
-        }
-    )*};
-}
-integer_from!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
 
 impl Integers {
     /// The ring of integers modulo `modulus`, e.g. `Integers::modulo(7)`. A prime

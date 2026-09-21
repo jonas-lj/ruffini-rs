@@ -56,19 +56,6 @@ where
     R: Ring,
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
 {
-    /// Build a polynomial from coefficients (constant term first). Trailing zeros
-    /// are trimmed to keep the canonical form.
-    pub fn new(ring: &Rc<PolynomialRing<R>>, mut coefficients: Vec<R::E>) -> Self {
-        let zero = ring.coeff_ring.zero();
-        while coefficients.last() == Some(&zero) {
-            coefficients.pop();
-        }
-        Polynomial {
-            coefficients,
-            ring: Rc::clone(ring),
-        }
-    }
-
     /// Degree of the polynomial, or `None` for the zero polynomial.
     pub fn degree(&self) -> Option<usize> {
         if self.coefficients.is_empty() {
@@ -126,7 +113,7 @@ where
                 (None, None) => break,
             }
         }
-        Polynomial::new(&self.ring, result)
+        self.ring.element(result)
     }
 }
 
@@ -153,7 +140,7 @@ where
                 (None, None) => break,
             }
         }
-        Polynomial::new(&self.ring, result)
+        self.ring.element(result)
     }
 }
 
@@ -185,7 +172,7 @@ where
                 result[i + j] = prev + term;
             }
         }
-        Polynomial::new(&self.ring, result)
+        self.ring.element(result)
     }
 }
 
@@ -212,7 +199,7 @@ where
                 (None, None) => unreachable!("index is below both lengths"),
             }
         }
-        Polynomial::new(&self.ring, result)
+        self.ring.element(result)
     }
 }
 
@@ -240,7 +227,7 @@ where
                 (None, None) => unreachable!("index is below both lengths"),
             }
         }
-        Polynomial::new(&self.ring, result)
+        self.ring.element(result)
     }
 }
 
@@ -273,7 +260,7 @@ where
                 result[i + j] = &result[i + j] + &term;
             }
         }
-        Polynomial::new(&self.ring, result)
+        self.ring.element(result)
     }
 }
 
@@ -338,8 +325,17 @@ where
     type E = Polynomial<R>;
     type Repr = Vec<R::E>;
 
+    /// Trims trailing zero coefficients to keep the canonical form.
     fn element<T: Into<Vec<R::E>>>(&self, coefficients: T) -> Self::E {
-        Polynomial::new(self, coefficients.into())
+        let mut coefficients = coefficients.into();
+        let zero = self.coeff_ring.zero();
+        while coefficients.last() == Some(&zero) {
+            coefficients.pop();
+        }
+        Polynomial {
+            coefficients,
+            ring: Rc::clone(self),
+        }
     }
 }
 
@@ -356,7 +352,7 @@ where
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
 {
     fn identity(&self) -> Self::E {
-        Polynomial::new(self, vec![self.coeff_ring.identity()])
+        self.element(vec![self.coeff_ring.identity()])
     }
 }
 
@@ -366,7 +362,7 @@ where
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E>,
 {
     fn zero(&self) -> Self::E {
-        Polynomial::new(self, Vec::new())
+        self.element(Vec::new())
     }
 }
 
@@ -445,8 +441,8 @@ where
         }
 
         (
-            Polynomial::new(&self.ring, q),
-            Polynomial::new(&self.ring, r),
+            self.ring.element(q),
+            self.ring.element(r),
         )
     }
 }
@@ -464,7 +460,7 @@ where
             .last()
             .cloned()
             .unwrap_or_else(|| self.coeff_ring.identity());
-        Polynomial::new(self, vec![lead])
+        self.element(vec![lead])
     }
 
     fn unit_inverse(&self, u: &Self::E) -> Self::E {
@@ -476,7 +472,7 @@ where
             .coeff_ring
             .inverse(c)
             .expect("unit_inverse called on a non-unit polynomial");
-        Polynomial::new(self, vec![c_inv])
+        self.element(vec![c_inv])
     }
 }
 
@@ -484,10 +480,9 @@ where
 mod tests {
     use super::*;
     use crate::integers::{Integer, Integers};
-    use num_bigint::BigInt;
 
     fn int(n: i64) -> Integer {
-        Integer::from(BigInt::from(n))
+        Integer::from(n)
     }
 
     fn zx() -> Rc<PolynomialRing<Integers>> {
@@ -495,7 +490,7 @@ mod tests {
     }
 
     fn poly(ring: &Rc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
-        Polynomial::new(ring, coeffs.into_iter().map(int).collect())
+        ring.element(coeffs.into_iter().map(int).collect::<Vec<_>>())
     }
 
     #[test]

@@ -185,21 +185,6 @@ where
     }
 }
 
-impl<R> QuotientRingElement<R>
-where
-    R: EuclideanDomain,
-    R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
-{
-    /// Construct an element of `ring` from a representative of the underlying ring.
-    /// The representative is reduced modulo the ring's modulus.
-    pub fn new(ring: &Rc<QuotientRing<R>>, value: R::E) -> Self {
-        QuotientRingElement {
-            value: ring.reduce(value),
-            ring: Rc::clone(ring),
-        }
-    }
-}
-
 impl<R> PartialEq for QuotientRingElement<R>
 where
     R: EuclideanDomain,
@@ -292,8 +277,12 @@ where
     type E = QuotientRingElement<R>;
     type Repr = R::E;
 
+    /// Reduces the representative modulo [`QuotientRing::modulus`].
     fn element<T: Into<R::E>>(&self, value: T) -> Self::E {
-        QuotientRingElement::new(self, value.into())
+        QuotientRingElement {
+            value: self.reduce(value.into()),
+            ring: Rc::clone(self),
+        }
     }
 }
 
@@ -310,7 +299,7 @@ where
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
 {
     fn identity(&self) -> Self::E {
-        QuotientRingElement::new(self, self.ring.identity())
+        self.element(self.ring.identity())
     }
 }
 
@@ -320,7 +309,7 @@ where
     R::E: Add<Output = R::E> + Sub<Output = R::E> + Mul<Output = R::E> + DivRem,
 {
     fn zero(&self) -> Self::E {
-        QuotientRingElement::new(self, self.ring.zero())
+        self.element(self.ring.zero())
     }
 }
 
@@ -366,6 +355,6 @@ where
         if gcd != self.ring.identity() {
             return None;
         }
-        Some(QuotientRingElement::new(self, s))
+        Some(self.element(s))
     }
 }
