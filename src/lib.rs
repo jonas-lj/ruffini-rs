@@ -16,6 +16,7 @@
 #[cfg(doctest)]
 pub struct ReadmeDoctests;
 
+pub mod constructive_reals;
 pub mod integers;
 pub mod polynomials;
 pub mod structures;
