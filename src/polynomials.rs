@@ -47,6 +47,17 @@ where
     fn polynomials(&self) -> Rc<PolynomialRing<Self>> {
         PolynomialRing::new(self.clone())
     }
+
+    /// The polynomial ring `Self[x_0, .., x_{n-1}]`.
+    ///
+    /// Unlike repeated [`polynomials`](RingExt::polynomials), the variable count is a
+    /// run-time value: nesting puts the arity in the type, this does not.
+    fn multi_polynomials(
+        &self,
+        variables: usize,
+    ) -> Rc<crate::multivariate::MultivariatePolynomialRing<Self>> {
+        crate::multivariate::MultivariatePolynomialRing::new(self.clone(), variables)
+    }
 }
 
 impl<R> RingExt for R

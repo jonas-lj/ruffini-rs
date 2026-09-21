@@ -23,6 +23,7 @@ pub mod constructive_reals;
 pub mod euclidean;
 pub mod fft;
 pub mod integers;
+pub mod multivariate;
 pub mod polynomials;
 pub mod pow;
 pub mod structures;
