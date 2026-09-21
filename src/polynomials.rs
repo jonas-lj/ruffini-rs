@@ -8,6 +8,7 @@ use crate::structures::{
     AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Ring, RingOps,
     SemiRing, Semigroup, Domain,
 };
+use num_bigint::BigInt;
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
 use std::rc::Rc;
@@ -306,6 +307,46 @@ macro_rules! polynomial_mixed_ops {
     )*};
 }
 polynomial_mixed_ops!(Add, add; Sub, sub; Mul, mul);
+
+/// One operator against a plain integer, for a single integer type.
+macro_rules! polynomial_int_op {
+    ($int:ty, $op:ident, $method:ident) => {
+        impl<R> $op<$int> for Polynomial<R>
+        where
+            R: Ring,
+            R::E: RingOps + Eq,
+        {
+            type Output = Polynomial<R>;
+            fn $method(self, rhs: $int) -> Self::Output {
+                let rhs = self.ring.from_integer(rhs);
+                self.$method(rhs)
+            }
+        }
+
+        impl<R> $op<$int> for &Polynomial<R>
+        where
+            R: Ring,
+            R::E: RingOps + Eq,
+            for<'c> &'c Polynomial<R>: $op<&'c Polynomial<R>, Output = Polynomial<R>>,
+        {
+            type Output = Polynomial<R>;
+            fn $method(self, rhs: $int) -> Self::Output {
+                let rhs = self.ring.from_integer(rhs);
+                self.$method(&rhs)
+            }
+        }
+    };
+}
+
+/// Arithmetic against a plain integer, embedded as a constant polynomial first.
+macro_rules! polynomial_int_ops {
+    ($($int:ty),* $(,)?) => {$(
+        polynomial_int_op!($int, Add, add);
+        polynomial_int_op!($int, Sub, sub);
+        polynomial_int_op!($int, Mul, mul);
+    )*};
+}
+polynomial_int_ops!(i64, BigInt);
 
 impl<R> fmt::Display for Polynomial<R>
 where

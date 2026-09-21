@@ -217,6 +217,13 @@ mod tests {
         assert_eq!(&f7.element(3) * 6, f7.element(4));
         // The integer is reduced into the ring first, so it may be arbitrarily large.
         assert_eq!(f7.element(1) * BigInt::from(15), f7.element(1));
+
+        // Same for polynomials, where the integer becomes a constant polynomial.
+        let zx = PolynomialRing::new(Integers::default());
+        let p = zx.element(vec![int(1), int(2)]); // 1 + 2x
+        assert_eq!(&p * 3, zx.element(vec![int(3), int(6)]));
+        assert_eq!(&p + 4, zx.element(vec![int(5), int(2)]));
+        assert_eq!(p - 1, zx.element(vec![int(0), int(2)]));
     }
 
     #[test]
