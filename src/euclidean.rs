@@ -1,6 +1,7 @@
 //! The extended Euclidean algorithm, over any [`EuclideanDomain`].
 
 use crate::structures::{DivRem, EuclideanDomain, RingOps};
+use std::ops::MulAssign;
 
 /// Returns `(gcd, x, y)` with `x * a + y * b == gcd`.
 ///
@@ -9,7 +10,7 @@ use crate::structures::{DivRem, EuclideanDomain, RingOps};
 pub fn extended_gcd<D>(domain: &D, a: D::E, b: D::E) -> (D::E, D::E, D::E)
 where
     D: EuclideanDomain,
-    D::E: RingOps + DivRem + Eq,
+    D::E: RingOps + DivRem + Eq + for<'a> MulAssign<&'a D::E>,
 {
     let (mut old_r, mut r) = (a, b);
     let (mut old_s, mut s) = (domain.identity(), domain.zero());
@@ -18,9 +19,13 @@ where
     while r != zero {
         let (q, new_r) = old_r.div_rem(&r);
         old_r = std::mem::replace(&mut r, new_r);
-        let new_s = old_s - q.clone() * s.clone();
+        let mut qs = s.clone();
+        qs *= &q;
+        let new_s = old_s - qs;
         old_s = std::mem::replace(&mut s, new_s);
-        let new_t = old_t - q * t.clone();
+        let mut qt = t.clone();
+        qt *= &q;
+        let new_t = old_t - qt;
         old_t = std::mem::replace(&mut t, new_t);
     }
     let u_inv = domain.unit_inverse(&domain.unit_part(&old_r));
