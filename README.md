@@ -7,8 +7,8 @@ integers.
 
 A trait hierarchy mirroring the standard algebraic tower:
 
-```
-Set → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Field
+```text
+Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Field
               ↘                   ↗
        CommutativeMonoid → AdditiveGroup
 ```
@@ -23,27 +23,39 @@ Set → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Field
   domain, so you can take quotients of polynomial rings by irreducible
   polynomials and chain the construction up to `F_{p^k}`.
 
-The `Field::inverse` and generic `extended_gcd` both rely on
+`Domain::E` does not require `Eq` — only `EuclideanDomain` and `Field` do, since
+those are where an algorithm tests for zero.
+
+`Field::invert` and the generic `extended_gcd` both rely on
 `EuclideanDomain::unit_part` / `unit_inverse` to canonicalise gcds — non-negative
 for `Z`, monic for `R[x]`.
 
 ## Example
 
 ```rust
-use std::rc::Rc;
-use num_bigint::BigInt;
-use ruffini::integers::{Integer, Integers};
-use ruffini::structures::{Field, Monoid, QuotientRing, QuotientRingElement};
+use ruffini::integers::Integers;
+use ruffini::structures::{Field, Monoid};
 
-let f7 = QuotientRing::new(Integers::default(), Integer::from(BigInt::from(7)));
-let three = QuotientRingElement::new(&f7, Integer::from(BigInt::from(3)));
+let f7 = Integers::modulo(7);
 
-assert_eq!(f7.inverse(&three).unwrap() * three, f7.identity()); // 3 · 3⁻¹ = 1 in F_7
+assert_eq!(f7.inverse(3).unwrap() * 3, f7.identity()); // 3 · 3⁻¹ = 1 in F_7
+```
+
+Integers are embedded into the ring on the fly, via `Ring::from_integer` (the
+canonical map `n ↦ n · 1`, by double-and-add). To name an element explicitly,
+use `Domain::element`:
+
+```rust
+use ruffini::integers::Integers;
+use ruffini::structures::Domain;
+
+let f7 = Integers::modulo(7);
+assert_eq!(&f7.element(3) + &f7.element(6), f7.element(2)); // 9 ≡ 2 (mod 7)
 ```
 
 ## Build & test
 
-```
+```text
 cargo test
 ```
 

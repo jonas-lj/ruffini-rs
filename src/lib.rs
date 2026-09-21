@@ -8,10 +8,13 @@
 //! constructions. A finite prime field `F_p` is just `Rc<QuotientRing<Integers>>`
 //! with a prime modulus; `F_p[x]` is then `Rc<PolynomialRing<Rc<QuotientRing<Integers>>>>`.
 //!
-//! [`Domain::E`](structures::Domain::E) does not require `Eq`. Decidable equality is demanded
-//! only at [`EuclideanDomain`](structures::EuclideanDomain) and
-//! [`Field`](structures::Field), whose algorithms test for zero, so element types
-//! without one can still form the structures below those.
+//! [`Domain::E`](structures::Domain::E) does not require `Eq`; only
+//! [`EuclideanDomain`](structures::EuclideanDomain) and [`Field`](structures::Field) do.
+
+/// Compiles the README's examples as doctests, so they cannot go stale.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
 
 pub mod integers;
 pub mod polynomials;
@@ -66,15 +69,15 @@ mod tests {
         let f7 = Integers::modulo(7);
 
         // 3 * 5 = 15 ≡ 1 (mod 7), so 3^{-1} = 5
-        assert_eq!(f7.inverse(&f7.element(3)), Some(f7.element(5)));
+        assert_eq!(f7.inverse(3), Some(f7.element(5)));
         // every nonzero element has an inverse that multiplies back to 1
         for n in 1..7 {
             let x = f7.element(n);
-            let inv = f7.inverse(&x).expect("nonzero element must have an inverse");
+            let inv = f7.invert(&x).expect("nonzero element must have an inverse");
             assert_eq!(&x * &inv, f7.identity());
         }
         // zero has no inverse
-        assert_eq!(f7.inverse(&f7.element(0)), None);
+        assert_eq!(f7.inverse(0), None);
         // order
         assert_eq!(f7.order(), BigInt::from(7));
     }
@@ -197,10 +200,23 @@ mod tests {
         // Z/6Z is not a field. inverse(2) and inverse(3) should return None
         // (they are zero divisors); inverse(5) should still work.
         let zmod6 = Integers::modulo(6);
-        assert_eq!(zmod6.inverse(&zmod6.element(2)), None);
-        assert_eq!(zmod6.inverse(&zmod6.element(3)), None);
+        assert_eq!(zmod6.inverse(2), None);
+        assert_eq!(zmod6.inverse(3), None);
         // 5*5 = 25 ≡ 1 (mod 6)
-        assert_eq!(zmod6.inverse(&zmod6.element(5)), Some(zmod6.element(5)));
+        assert_eq!(zmod6.inverse(5), Some(zmod6.element(5)));
+    }
+
+    #[test]
+    fn arithmetic_against_plain_integers() {
+        let f7 = Integers::modulo(7);
+        // 3 · 3⁻¹ = 1 in F_7, with neither side spelled out as an element.
+        assert_eq!(f7.inverse(3).unwrap() * 3, f7.identity());
+        // 3 + 6 = 9 ≡ 2, 3 - 6 = -3 ≡ 4, 3 * 6 = 18 ≡ 4 (mod 7)
+        assert_eq!(f7.element(3) + 6, f7.element(2));
+        assert_eq!(f7.element(3) - 6, f7.element(4));
+        assert_eq!(&f7.element(3) * 6, f7.element(4));
+        // The integer is reduced into the ring first, so it may be arbitrarily large.
+        assert_eq!(f7.element(1) * BigInt::from(15), f7.element(1));
     }
 
     #[test]
@@ -220,55 +236,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn from_integer_handles_values_far_beyond_a_machine_word() {
-        let z = Integers::default();
-        let n = 1u128 << 100;
-        assert_eq!(z.from_integer(n), Integer::from(n));
-        // Double-and-add is logarithmic, so this terminates; repeated addition would not.
-        let huge = BigInt::from(1u128 << 127) * BigInt::from(1u128 << 127);
-        assert_eq!(z.from_integer(huge.clone()), Integer::from(huge));
-    }
-
-    #[test]
-    fn from_integer_is_a_ring_homomorphism() {
-        let f7 = Integers::modulo(7);
-        assert_eq!(f7.from_integer(0), f7.zero());
-        assert_eq!(f7.from_integer(1), f7.identity());
-        // 9 ≡ 2 and -1 ≡ 6 (mod 7)
-        assert_eq!(f7.from_integer(9), f7.element(2));
-        assert_eq!(f7.from_integer(-1), f7.element(6));
-        // n ↦ n · 1 preserves both operations.
-        for a in -10i64..10 {
-            for b in -10i64..10 {
-                assert_eq!(
-                    f7.from_integer(a + b),
-                    &f7.from_integer(a) + &f7.from_integer(b)
-                );
-                assert_eq!(
-                    f7.from_integer(a * b),
-                    &f7.from_integer(a) * &f7.from_integer(b)
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn from_integer_on_a_polynomial_ring_gives_a_constant() {
-        let zx = PolynomialRing::new(Integers::default());
-        assert_eq!(zx.from_integer(3), zx.element(vec![int(3)]));
-        assert_eq!(zx.from_integer(-3), zx.element(vec![int(-3)]));
-        assert_eq!(zx.from_integer(0), zx.zero());
-        assert_eq!(zx.from_integer(1), zx.identity());
-        assert_eq!(zx.from_integer(5).degree(), Some(0));
-    }
-
-    /// A ring whose elements have no decidable equality, standing in for something like
-    /// constructive reals. The point is that the hierarchy up to `Ring` no longer demands
-    /// `Eq` — if this module compiles, the bound really has moved up to `EuclideanDomain`.
+    /// A ring whose elements have no decidable equality. If this module compiles, the
+    /// hierarchy up to `Ring` really does not demand `Eq`.
     mod without_eq {
         use crate::structures::{
-            AdditiveGroup, CommutativeMonoid, Monoid, Ring, SemiRing, Semigroup, Domain,
+            AdditiveGroup, CommutativeMonoid, Domain, Monoid, Ring, SemiRing, Semigroup,
         };
         use std::ops::{Add, Mul, Sub};
 
