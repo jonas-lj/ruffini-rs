@@ -1,26 +1,7 @@
 //! Radix-2 fast Fourier transform over any ring with a root of unity.
 
+use crate::pow::pow;
 use crate::structures::{Ring, RingOps};
-
-/// `base^exp`, by square-and-multiply.
-pub fn pow<R>(ring: &R, base: &R::E, mut exp: usize) -> R::E
-where
-    R: Ring,
-    R::E: RingOps,
-{
-    let mut result = ring.identity();
-    let mut base = base.clone();
-    while exp > 0 {
-        if exp & 1 == 1 {
-            result = result * base.clone();
-        }
-        exp >>= 1;
-        if exp > 0 {
-            base = base.clone() * base;
-        }
-    }
-    result
-}
 
 /// Reorders `values` so index `i` holds what was at `i` with its bits reversed.
 fn bit_reverse<T>(values: &mut [T]) {

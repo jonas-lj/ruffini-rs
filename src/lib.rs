@@ -21,6 +21,7 @@ pub mod euclidean;
 pub mod fft;
 pub mod integers;
 pub mod polynomials;
+pub mod pow;
 pub mod structures;
 
 #[cfg(test)]
