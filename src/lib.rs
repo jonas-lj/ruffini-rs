@@ -121,6 +121,44 @@ mod tests {
     }
 
     #[test]
+    fn polynomial_product_matches_schoolbook_for_every_shape() {
+        let zx = Integers::default().polynomials();
+        let poly = |c: &[i64]| zx.element(c.iter().map(|n| int(*n)).collect::<Vec<_>>());
+
+        // Scatter-style reference, against the gathered implementation.
+        fn reference(a: &[i64], b: &[i64]) -> Vec<i64> {
+            if a.is_empty() || b.is_empty() {
+                return Vec::new();
+            }
+            let mut out = vec![0i64; a.len() + b.len() - 1];
+            for (i, x) in a.iter().enumerate() {
+                for (j, y) in b.iter().enumerate() {
+                    out[i + j] += x * y;
+                }
+            }
+            while out.last() == Some(&0) {
+                out.pop();
+            }
+            out
+        }
+
+        // Asymmetric lengths are where the gather bounds bite.
+        for n in 0..6usize {
+            for m in 0..6usize {
+                let a: Vec<i64> = (1..=n as i64).map(|i| i - 3).collect();
+                let b: Vec<i64> = (1..=m as i64).map(|j| 2 * j - 5).collect();
+                assert_eq!(
+                    poly(&a) * poly(&b),
+                    poly(&reference(&a, &b)),
+                    "n = {n}, m = {m}"
+                );
+                // Borrowed operator takes the same path.
+                assert_eq!(&poly(&a) * &poly(&b), poly(&reference(&a, &b)));
+            }
+        }
+    }
+
+    #[test]
     fn polynomial_division_in_f7_x() {
         let f7 = Integers::modulo(7);
         let f7x = f7.polynomials();
