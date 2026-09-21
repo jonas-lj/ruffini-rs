@@ -50,7 +50,8 @@ use `Domain::element`:
 
 ```rust
 use ruffini::integers::Integers;
-use ruffini::structures::{Domain, Ring};
+use ruffini::polynomials::RingExt;
+use ruffini::structures::Domain;
 
 let f7 = Integers::modulo(7);
 assert_eq!(&f7.element(3) + &f7.element(6), f7.element(2)); // 9 ≡ 2 (mod 7)

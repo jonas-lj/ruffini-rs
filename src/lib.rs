@@ -30,6 +30,7 @@ pub mod structures;
 #[cfg(test)]
 mod tests {
     use crate::integers::{Integer, Integers};
+    use crate::polynomials::RingExt;
     use crate::structures::{
         CommutativeMonoid, DivRem, Domain, EuclideanDomain, Field, Monoid, Ring,
     };
