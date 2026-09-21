@@ -1,6 +1,6 @@
 //! Algebraic structure traits and the [`QuotientRing`] construction.
 //!
-//! The hierarchy goes `Set` → `Semigroup` → `Monoid` → `SemiRing` → `Ring` → `EuclideanDomain`,
+//! The hierarchy goes `Domain` → `Semigroup` → `Monoid` → `SemiRing` → `Ring` → `EuclideanDomain`,
 //! and (orthogonally) `CommutativeMonoid` → `AdditiveGroup`. Traits are implemented on a
 //! value-domain handle (e.g. [`crate::integers::Integers`]) rather than on the element type
 //! itself, so a single element type can participate in multiple structures.
@@ -19,26 +19,35 @@ pub trait RingOps: Sized + Add<Output = Self> + Sub<Output = Self> + Mul<Output 
 
 impl<T: Add<Output = T> + Sub<Output = T> + Mul<Output = T>> RingOps for T {}
 
-/// A set: a value-domain handle associating a concrete element type with structure impls.
-pub trait Set: Clone {
-    /// The element type carried by this set.
-    type E: Clone + Eq;
+/// A value-domain handle: it names a concrete element type and knows how to build
+/// elements of it from representatives.
+pub trait Domain {
+    /// The element type carried by this domain.
+    ///
+    /// Note the absence of `Eq`: it is required further up, at [`EuclideanDomain`] and
+    /// [`Field`], where algorithms actually test for zero. Element types without a
+    /// decidable equality (constructive reals, say) can still form the lower structures.
+    type E: Clone;
 
-    /// A representative that this set knows how to turn into an element. Element types
-    /// that carry a ring handle can't implement `From`, so the set supplies the conversion.
+    /// A representative that this domain knows how to turn into an element. Element types
+    /// that carry a ring handle can't implement `From`, so the domain supplies the conversion.
     type Repr;
 
-    /// Builds an element of this set from a representative.
+    /// Builds an element of this domain from a representative.
     fn element<T: Into<Self::Repr>>(&self, value: T) -> Self::E;
 
-    /// Tests whether two representatives denote the same element of this set.
-    fn eq<F: Into<Self::Repr>, G: Into<Self::Repr>>(&self, a: F, b: G) -> bool {
+    /// Tests whether two representatives denote the same element of this domain.
+    /// Available only where the element type has a decidable equality.
+    fn eq<F: Into<Self::Repr>, G: Into<Self::Repr>>(&self, a: F, b: G) -> bool
+    where
+        Self::E: Eq,
+    {
         self.element(a) == self.element(b)
     }
 }
 
-/// A set whose elements form a semigroup under multiplication.
-pub trait Semigroup: Set
+/// A domain whose elements form a semigroup under multiplication.
+pub trait Semigroup: Domain
 where
     Self::E: Mul<Output = Self::E>,
 {
@@ -53,8 +62,8 @@ where
     fn identity(&self) -> Self::E;
 }
 
-/// A set whose elements form a commutative monoid under addition.
-pub trait CommutativeMonoid: Set
+/// A domain whose elements form a commutative monoid under addition.
+pub trait CommutativeMonoid: Domain
 where
     Self::E: Add<Output = Self::E>,
 {
@@ -70,7 +79,7 @@ where
 {
 }
 
-/// A set that is both a multiplicative monoid and a commutative additive monoid.
+/// A domain that is both a multiplicative monoid and a commutative additive monoid.
 pub trait SemiRing: Monoid + CommutativeMonoid
 where
     Self::E: Add<Output = Self::E> + Mul<Output = Self::E>,
@@ -100,7 +109,7 @@ pub trait DivRem: Sized {
 /// normal part is the monic associate.
 pub trait EuclideanDomain: Ring
 where
-    Self::E: RingOps + DivRem,
+    Self::E: RingOps + DivRem + Eq,
 {
     /// Returns the unit part of `x` (the unit that, when divided out, leaves the
     /// canonical representative of `x`'s associate class).
@@ -140,7 +149,7 @@ where
 /// A field: a ring in which every nonzero element has a multiplicative inverse.
 pub trait Field: Ring
 where
-    Self::E: RingOps,
+    Self::E: RingOps + Eq,
 {
     /// Returns the multiplicative inverse of `x`, or [`None`] if `x` is the additive identity.
     fn inverse(&self, x: &Self::E) -> Option<Self::E>;
@@ -152,10 +161,10 @@ where
 /// arithmetic operation. Two elements compare equal iff their representatives are
 /// congruent modulo `m` (so non-canonical sign conventions in [`DivRem`] don't break
 /// equality).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct QuotientRingElement<R: EuclideanDomain>
 where
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     value: R::E,
     ring: Rc<QuotientRing<R>>,
@@ -165,7 +174,7 @@ where
 #[derive(Debug, Clone)]
 pub struct QuotientRing<R: EuclideanDomain>
 where
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     ring: R,
     modulus: R::E,
@@ -174,7 +183,7 @@ where
 impl<R> QuotientRing<R>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     /// Construct `R / (modulus)`, wrapped in an [`Rc`] so that elements can hold a
     /// cheap shared reference back to their containing ring.
@@ -196,10 +205,23 @@ where
     }
 }
 
+impl<R> Clone for QuotientRingElement<R>
+where
+    R: EuclideanDomain,
+    R::E: RingOps + DivRem + Eq,
+{
+    fn clone(&self) -> Self {
+        QuotientRingElement {
+            value: self.value.clone(),
+            ring: Rc::clone(&self.ring),
+        }
+    }
+}
+
 impl<R> PartialEq for QuotientRingElement<R>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     fn eq(&self, other: &Self) -> bool {
         let diff = self.value.clone() - other.value.clone();
@@ -210,7 +232,7 @@ where
 impl<R> Eq for QuotientRingElement<R>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
 }
 
@@ -223,7 +245,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op for QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: RingOps + DivRem,
+            R::E: RingOps + DivRem + Eq,
         {
             type Output = Self;
             fn $method(self, rhs: Self) -> Self::Output {
@@ -239,7 +261,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op<&QuotientRingElement<R>> for &QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: RingOps + DivRem,
+            R::E: RingOps + DivRem + Eq,
             for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
         {
             type Output = QuotientRingElement<R>;
@@ -256,7 +278,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op<&QuotientRingElement<R>> for QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: RingOps + DivRem,
+            R::E: RingOps + DivRem + Eq,
             for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
         {
             type Output = QuotientRingElement<R>;
@@ -268,7 +290,7 @@ macro_rules! quotient_ring_ops {
         impl<R> $op<QuotientRingElement<R>> for &QuotientRingElement<R>
         where
             R: EuclideanDomain,
-            R::E: RingOps + DivRem,
+            R::E: RingOps + DivRem + Eq,
             for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
         {
             type Output = QuotientRingElement<R>;
@@ -280,10 +302,10 @@ macro_rules! quotient_ring_ops {
 }
 quotient_ring_ops!(Add, add; Sub, sub; Mul, mul);
 
-impl<R> Set for Rc<QuotientRing<R>>
+impl<R> Domain for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     type E = QuotientRingElement<R>;
     type Repr = R::E;
@@ -300,14 +322,14 @@ where
 impl<R> Semigroup for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
 }
 
 impl<R> Monoid for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     fn identity(&self) -> Self::E {
         self.element(self.ring.identity())
@@ -317,7 +339,7 @@ where
 impl<R> CommutativeMonoid for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     fn zero(&self) -> Self::E {
         self.element(self.ring.zero())
@@ -327,21 +349,21 @@ where
 impl<R> AdditiveGroup for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
 }
 
 impl<R> SemiRing for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
 }
 
 impl<R> Ring for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
 }
 
@@ -356,7 +378,7 @@ where
 impl<R> Field for Rc<QuotientRing<R>>
 where
     R: EuclideanDomain,
-    R::E: RingOps + DivRem,
+    R::E: RingOps + DivRem + Eq,
 {
     fn inverse(&self, x: &Self::E) -> Option<Self::E> {
         if x == &self.zero() {

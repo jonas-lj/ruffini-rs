@@ -2,7 +2,7 @@
 
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Monoid, QuotientRing, Ring,
-    SemiRing, Semigroup, Set,
+    SemiRing, Semigroup, Domain,
 };
 use derive_more::{Add, Display, From, Sub};
 use num_bigint::BigInt;
@@ -26,7 +26,7 @@ impl Integers {
     }
 }
 
-impl Set for Integers {
+impl Domain for Integers {
     type E = Integer;
     type Repr = Integer;
 

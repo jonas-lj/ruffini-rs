@@ -1,12 +1,17 @@
 //! Ruffini: algebraic structures over arbitrary-precision integers.
 //!
 //! Provides traits for the algebraic hierarchy
-//! ([`Set`](structures::Set) → [`Semigroup`](structures::Semigroup) → …
+//! ([`Domain`](structures::Domain) → [`Semigroup`](structures::Semigroup) → …
 //! → [`EuclideanDomain`](structures::EuclideanDomain) → [`Field`](structures::Field))
 //! along with concrete implementations: the [integers], generic
 //! [`QuotientRing`](structures::QuotientRing) and [`Polynomial`](polynomials::Polynomial)
 //! constructions. A finite prime field `F_p` is just `Rc<QuotientRing<Integers>>`
 //! with a prime modulus; `F_p[x]` is then `Rc<PolynomialRing<Rc<QuotientRing<Integers>>>>`.
+//!
+//! [`Domain::E`](structures::Domain::E) does not require `Eq`. Decidable equality is demanded
+//! only at [`EuclideanDomain`](structures::EuclideanDomain) and
+//! [`Field`](structures::Field), whose algorithms test for zero, so element types
+//! without one can still form the structures below those.
 
 pub mod integers;
 pub mod polynomials;
@@ -16,7 +21,7 @@ pub mod structures;
 mod tests {
     use crate::integers::{Integer, Integers};
     use crate::polynomials::PolynomialRing;
-    use crate::structures::{CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Set};
+    use crate::structures::{CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Domain};
     use num_bigint::BigInt;
 
     fn int(n: i64) -> Integer {
@@ -194,5 +199,72 @@ mod tests {
         assert_eq!(zmod6.inverse(&zmod6.element(3)), None);
         // 5*5 = 25 ≡ 1 (mod 6)
         assert_eq!(zmod6.inverse(&zmod6.element(5)), Some(zmod6.element(5)));
+    }
+
+    /// A ring whose elements have no decidable equality, standing in for something like
+    /// constructive reals. The point is that the hierarchy up to `Ring` no longer demands
+    /// `Eq` — if this module compiles, the bound really has moved up to `EuclideanDomain`.
+    mod without_eq {
+        use crate::structures::{
+            AdditiveGroup, CommutativeMonoid, Monoid, Ring, SemiRing, Semigroup, Domain,
+        };
+        use std::ops::{Add, Mul, Sub};
+
+        /// Deliberately implements neither `PartialEq` nor `Eq`.
+        #[derive(Clone)]
+        struct Opaque(f64);
+
+        impl Add for Opaque {
+            type Output = Self;
+            fn add(self, rhs: Self) -> Self {
+                Opaque(self.0 + rhs.0)
+            }
+        }
+        impl Sub for Opaque {
+            type Output = Self;
+            fn sub(self, rhs: Self) -> Self {
+                Opaque(self.0 - rhs.0)
+            }
+        }
+        impl Mul for Opaque {
+            type Output = Self;
+            fn mul(self, rhs: Self) -> Self {
+                Opaque(self.0 * rhs.0)
+            }
+        }
+
+        #[derive(Clone)]
+        struct Opaques;
+
+        impl Domain for Opaques {
+            type E = Opaque;
+            type Repr = Opaque;
+            fn element<T: Into<Opaque>>(&self, value: T) -> Opaque {
+                value.into()
+            }
+        }
+        impl Semigroup for Opaques {}
+        impl Monoid for Opaques {
+            fn identity(&self) -> Opaque {
+                Opaque(1.0)
+            }
+        }
+        impl CommutativeMonoid for Opaques {
+            fn zero(&self) -> Opaque {
+                Opaque(0.0)
+            }
+        }
+        impl AdditiveGroup for Opaques {}
+        impl SemiRing for Opaques {}
+        impl Ring for Opaques {}
+
+        #[test]
+        fn reaches_ring_without_a_decidable_equality() {
+            let r = Opaques;
+            let sum = r.element(Opaque(2.0)) + r.identity();
+            assert!((sum.0 - 3.0).abs() < 1e-12);
+            let product = r.element(Opaque(3.0)) * r.element(Opaque(4.0));
+            assert!((product.0 - 12.0).abs() < 1e-12);
+        }
     }
 }
