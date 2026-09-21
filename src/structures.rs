@@ -304,73 +304,22 @@ macro_rules! quotient_ring_ops {
             }
         }
 
-        impl<R> $op<&QuotientRingElement<R>> for QuotientRingElement<R>
-        where
-            R: EuclideanDomain,
-            R::E: RingOps + DivRem + Eq,
-            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
-        {
-            type Output = QuotientRingElement<R>;
-            fn $method(self, rhs: &QuotientRingElement<R>) -> Self::Output {
-                (&self).$method(rhs)
-            }
-        }
-
-        impl<R> $op<QuotientRingElement<R>> for &QuotientRingElement<R>
-        where
-            R: EuclideanDomain,
-            R::E: RingOps + DivRem + Eq,
-            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
-        {
-            type Output = QuotientRingElement<R>;
-            fn $method(self, rhs: QuotientRingElement<R>) -> Self::Output {
-                self.$method(&rhs)
-            }
-        }
     )*};
 }
 quotient_ring_ops!(Add, add; Sub, sub; Mul, mul);
 
-/// One operator against a plain integer, for a single integer type.
-macro_rules! quotient_ring_int_op {
-    ($int:ty, $op:ident, $method:ident) => {
-        impl<R> $op<$int> for QuotientRingElement<R>
-        where
-            R: EuclideanDomain,
-            R::E: RingOps + DivRem + Eq,
-        {
-            type Output = QuotientRingElement<R>;
-            fn $method(self, rhs: $int) -> Self::Output {
-                let rhs = self.ring.from_integer(rhs);
-                self.$method(rhs)
-            }
-        }
+forward_ref_binops!(
+    QuotientRingElement<R>,
+    { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, },
+    Add, add; Sub, sub; Mul, mul
+);
 
-        impl<R> $op<$int> for &QuotientRingElement<R>
-        where
-            R: EuclideanDomain,
-            R::E: RingOps + DivRem + Eq,
-            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
-        {
-            type Output = QuotientRingElement<R>;
-            fn $method(self, rhs: $int) -> Self::Output {
-                let rhs = self.ring.from_integer(rhs);
-                self.$method(&rhs)
-            }
-        }
-    };
-}
-
-/// Arithmetic against a plain integer, which is embedded via [`Ring::from_integer`]
-/// before the operation: `x * 3` means `x * (3 · 1)` in `x`'s own ring.
-macro_rules! quotient_ring_int_ops {
-    ($($int:ty),* $(,)?) => {$(
-        quotient_ring_int_op!($int, Add, add);
-        quotient_ring_int_op!($int, Sub, sub);
-        quotient_ring_int_op!($int, Mul, mul);
-    )*};
-}
-quotient_ring_int_ops!(i64, BigInt);
+int_operand_ops!(
+    QuotientRingElement<R>,
+    { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, },
+    i64,
+    BigInt
+);
 
 /// Compound assignment.
 macro_rules! quotient_ring_assign_ops {

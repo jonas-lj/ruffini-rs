@@ -16,6 +16,9 @@
 #[cfg(doctest)]
 pub struct ReadmeDoctests;
 
+#[macro_use]
+mod macros;
+
 pub mod constructive_reals;
 pub mod euclidean;
 pub mod fft;
