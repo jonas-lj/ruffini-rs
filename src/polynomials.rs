@@ -36,6 +36,25 @@ where
     ring: Rc<PolynomialRing<R>>,
 }
 
+/// Puts [`polynomials`](RingExt::polynomials) on every ring, so `structures` does not
+/// have to name this module.
+pub trait RingExt: Ring + Clone + Sized
+where
+    Self::E: RingOps + Eq,
+{
+    /// The polynomial ring `Self[x]`.
+    fn polynomials(&self) -> Rc<PolynomialRing<Self>> {
+        PolynomialRing::new(self.clone())
+    }
+}
+
+impl<R> RingExt for R
+where
+    R: Ring + Clone,
+    R::E: RingOps + Eq,
+{
+}
+
 impl<R> PolynomialRing<R>
 where
     R: Ring,
@@ -47,7 +66,7 @@ where
     }
 
     /// The underlying coefficient ring.
-    pub fn coefficient_ring(&self) -> &R {
+    pub fn coefficients(&self) -> &R {
         &self.coeff_ring
     }
 }
