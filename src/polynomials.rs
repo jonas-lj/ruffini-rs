@@ -10,7 +10,7 @@ use crate::structures::{
 };
 use num_bigint::BigInt;
 use std::fmt;
-use std::ops::{Add, Mul, MulAssign, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 use std::rc::Rc;
 
 /// The polynomial ring `R[x]` over a coefficient ring `R`.
@@ -371,18 +371,47 @@ where
     }
 }
 
-/// Multiplies in place. The convolution still builds a new coefficient vector, but
-/// neither operand is cloned to get there.
-impl<R> MulAssign<&Polynomial<R>> for Polynomial<R>
-where
-    R: Ring,
-    R::E: RingOps + Eq,
-    for<'c> &'c Polynomial<R>: Mul<&'c Polynomial<R>, Output = Polynomial<R>>,
-{
-    fn mul_assign(&mut self, rhs: &Polynomial<R>) {
-        *self = &*self * rhs;
-    }
+/// Compound assignment.
+///
+/// These go through the owned operators rather than the borrowed ones. Requiring
+/// `&Polynomial<R>: Add<&Polynomial<R>>` here sends trait resolution around a cycle,
+/// because `R::E` may itself be a `Polynomial`. Swapping in the zero polynomial costs
+/// only an `Rc` bump, so the left operand is still not cloned.
+macro_rules! polynomial_assign_ops {
+    ($($op:ident, $method:ident, $base_method:ident);* $(;)?) => {$(
+        impl<R> $op<&Polynomial<R>> for Polynomial<R>
+        where
+            R: Ring,
+            R::E: RingOps + Eq,
+        {
+            fn $method(&mut self, rhs: &Polynomial<R>) {
+                let placeholder = Polynomial {
+                    coefficients: Vec::new(),
+                    ring: Rc::clone(&self.ring),
+                };
+                let lhs = std::mem::replace(self, placeholder);
+                *self = lhs.$base_method(rhs.clone());
+            }
+        }
+
+        impl<R> $op<Polynomial<R>> for Polynomial<R>
+        where
+            R: Ring,
+            R::E: RingOps + Eq,
+        {
+            fn $method(&mut self, rhs: Polynomial<R>) {
+                let placeholder = Polynomial {
+                    coefficients: Vec::new(),
+                    ring: Rc::clone(&self.ring),
+                };
+                let lhs = std::mem::replace(self, placeholder);
+                *self = lhs.$base_method(rhs);
+            }
+        }
+    )*};
 }
+polynomial_assign_ops!(AddAssign, add_assign, add; MulAssign, mul_assign, mul);
+
 
 impl<R> Domain for Rc<PolynomialRing<R>>
 where
