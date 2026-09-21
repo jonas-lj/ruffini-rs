@@ -18,6 +18,7 @@ pub struct ReadmeDoctests;
 
 pub mod constructive_reals;
 pub mod euclidean;
+pub mod fft;
 pub mod integers;
 pub mod polynomials;
 pub mod structures;
