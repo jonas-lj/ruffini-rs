@@ -360,6 +360,14 @@ where
             if i > 0 {
                 write!(f, " + ")?;
             }
+            // A coefficient that is itself a sum has to be bracketed, or a nested
+            // polynomial's terms run together with the outer ones.
+            let c = c.to_string();
+            let c = if c.contains(' ') {
+                format!("({})", c)
+            } else {
+                c
+            };
             match i {
                 0 => write!(f, "{}", c)?,
                 1 => write!(f, "{}*x", c)?,
@@ -586,6 +594,21 @@ mod tests {
 
     fn poly(ring: &Rc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
         ring.element(coeffs.into_iter().map(int).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn display_brackets_polynomial_coefficients() {
+        let zx = zx();
+        let zxy = PolynomialRing::new(zx.clone());
+        let c = |coeffs: Vec<i64>| poly(&zx, coeffs);
+
+        // (1 + 2x) + (3 + 4x)y — without brackets the two levels run together.
+        let p = zxy.element(vec![c(vec![1, 2]), c(vec![3, 4])]);
+        assert_eq!(format!("{}", p), "(1 + 2*x) + (3 + 4*x)*x");
+
+        // Single-term coefficients are left alone.
+        let q = zxy.element(vec![c(vec![7]), c(vec![0, 1])]);
+        assert_eq!(format!("{}", q), "7 + (0 + 1*x)*x");
     }
 
     #[test]
