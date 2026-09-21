@@ -42,7 +42,7 @@ mod tests {
         for exp in 0..16usize {
             let mut expected = z.identity();
             for _ in 0..exp {
-                expected = expected * Integer::from(7);
+                expected *= Integer::from(7);
             }
             assert_eq!(pow(&z, &Integer::from(7), exp), expected, "at exp = {exp}");
         }

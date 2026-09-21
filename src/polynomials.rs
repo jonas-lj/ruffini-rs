@@ -10,7 +10,7 @@ use crate::structures::{
 };
 use num_bigint::BigInt;
 use std::fmt;
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Mul, MulAssign, Sub};
 use std::rc::Rc;
 
 /// The polynomial ring `R[x]` over a coefficient ring `R`.
@@ -368,6 +368,19 @@ where
             }
         }
         Ok(())
+    }
+}
+
+/// Multiplies in place. The convolution still builds a new coefficient vector, but
+/// neither operand is cloned to get there.
+impl<R> MulAssign<&Polynomial<R>> for Polynomial<R>
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+    for<'c> &'c Polynomial<R>: Mul<&'c Polynomial<R>, Output = Polynomial<R>>,
+{
+    fn mul_assign(&mut self, rhs: &Polynomial<R>) {
+        *self = &*self * rhs;
     }
 }
 
