@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 num-bigint = "0.4.6"
-derive_more = { version = "1.0.0", features = ["from", "add", "display"] }
+derive_more = { version = "1.0.0", features = ["from", "into", "add", "display", "mul"] }
