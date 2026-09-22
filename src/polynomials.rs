@@ -48,6 +48,11 @@ where
         PolynomialRing::new(self.clone())
     }
 
+    /// The ring of `n x n` matrices over `Self`.
+    fn matrices(&self, n: usize) -> Rc<crate::matrices::MatrixRing<Self>> {
+        crate::matrices::MatrixRing::new(self.clone(), n)
+    }
+
     /// The polynomial ring `Self[x_0, .., x_{n-1}]`.
     ///
     /// Unlike repeated [`polynomials`](RingExt::polynomials), the variable count is a
