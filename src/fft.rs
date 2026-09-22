@@ -24,7 +24,7 @@ fn bit_reverse<T>(values: &mut [T]) {
 /// Transforms `values` in place, where `omega` is a primitive `values.len()`-th root
 /// of unity. The length must be a power of two.
 ///
-/// Whether such an `omega` exists is the caller's problem; nothing here can check it,
+/// Whether such an `omega` exists is the caller's problem. Nothing here can check it,
 /// since a ring need not have a decidable equality.
 pub fn fft<R>(ring: &R, values: &mut [R::E], omega: &R::E)
 where

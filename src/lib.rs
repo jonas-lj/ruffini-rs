@@ -6,9 +6,9 @@
 //! along with concrete implementations: the [integers], generic
 //! [`QuotientRing`](structures::QuotientRing) and [`Polynomial`](polynomials::Polynomial)
 //! constructions. A finite prime field `F_p` is just `Rc<QuotientRing<Integers>>`
-//! with a prime modulus; `F_p[x]` is then `Rc<PolynomialRing<Rc<QuotientRing<Integers>>>>`.
+//! with a prime modulus. `F_p[x]` is then `Rc<PolynomialRing<Rc<QuotientRing<Integers>>>>`.
 //!
-//! [`Domain::E`](structures::Domain::E) does not require `Eq`; only
+//! [`Domain::E`](structures::Domain::E) does not require `Eq`. Only
 //! [`EuclideanDomain`](structures::EuclideanDomain) and [`Field`](structures::Field) do.
 
 /// Compiles the README's examples as doctests, so they cannot go stale.
