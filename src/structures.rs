@@ -6,6 +6,7 @@
 //! itself, so a single element type can participate in multiple structures.
 
 use num_bigint::{BigInt, Sign};
+use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 use std::rc::Rc;
 
@@ -359,6 +360,17 @@ macro_rules! quotient_ring_assign_ops {
 }
 quotient_ring_assign_ops!(AddAssign, add_assign, Add, add; MulAssign, mul_assign, Mul, mul);
 
+
+/// Prints the reduced representative.
+impl<R> fmt::Display for QuotientRingElement<R>
+where
+    R: EuclideanDomain,
+    R::E: RingOps + DivRem + Eq + fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
 
 impl<R> Domain for Rc<QuotientRing<R>>
 where

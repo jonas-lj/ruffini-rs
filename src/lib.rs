@@ -20,6 +20,7 @@ pub struct ReadmeDoctests;
 mod macros;
 
 pub mod constructive_reals;
+pub mod elliptic;
 pub mod euclidean;
 pub mod fft;
 pub mod integers;
