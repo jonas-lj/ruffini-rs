@@ -1,13 +1,15 @@
 //! Polynomial interpolation: the lowest-degree polynomial through a set of points.
 
 use crate::polynomials::{Polynomial, PolynomialRing};
-use crate::structures::{CommutativeMonoid, Domain, Field, Monoid, RingOps};
+use crate::structures::{CommutativeMonoid, Domain, Field, RingOps};
 use std::rc::Rc;
 
 /// Multiplies every coefficient by `c`.
 ///
-/// Cheaper than multiplying by a constant polynomial, which would convolve, and it
-/// needs no bound on the coefficients' reference ops.
+/// Both clones are forced. `p` is a basis polynomial that later calls reuse, so its
+/// coefficients cannot be moved out, and the owned `Mul` consumes `c`. The borrowed
+/// form would need `for<'a> &'a R::E: Mul<&'a R::E>`, which overflows trait
+/// resolution through `Matrix`'s own recursive borrowed operators.
 fn scale<R>(ring: &Rc<PolynomialRing<R>>, p: &Polynomial<R>, c: &R::E) -> Polynomial<R>
 where
     R: Field + Clone,
@@ -46,20 +48,22 @@ where
         let field = ring.coefficients().clone();
         let basis = (0..nodes.len())
             .map(|j| {
-                // l_j = prod_{m != j} (X - x_m) / (x_j - x_m), with the scalars
-                // gathered so only one inversion is needed.
-                let mut numerator = ring.identity();
+                // l_j = prod_{m != j} (X - x_m) / (x_j - x_m). Gathering the scalars
+                // needs one inversion, and starting the product from that constant
+                // folds the scaling in rather than making a second pass.
                 let mut denominator = field.identity();
                 for (m, x_m) in nodes.iter().enumerate() {
-                    if m == j {
-                        continue;
+                    if m != j {
+                        denominator *= nodes[j].clone() - x_m.clone();
                     }
-                    let root = ring.element(vec![field.zero() - x_m.clone(), field.identity()]);
-                    numerator *= root;
-                    denominator *= nodes[j].clone() - x_m.clone();
                 }
-                let inverse = field.invert(&denominator)?;
-                Some(scale(ring, &numerator, &inverse))
+                let mut l = ring.element(vec![field.invert(&denominator)?]);
+                for (m, x_m) in nodes.iter().enumerate() {
+                    if m != j {
+                        l *= ring.element(vec![field.zero() - x_m.clone(), field.identity()]);
+                    }
+                }
+                Some(l)
             })
             .collect::<Option<Vec<_>>>()?;
         Some(Interpolation {
