@@ -299,6 +299,62 @@ where
     }
 }
 
+/// Entry-wise on borrowed operands, reading both through the entries' reference ops.
+macro_rules! matrix_borrowed_entrywise_ops {
+    ($($op:ident, $method:ident);* $(;)?) => {$(
+        impl<R> $op<&Matrix<R>> for &Matrix<R>
+        where
+            R: Ring + Clone,
+            R::E: RingOps,
+            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
+        {
+            type Output = Matrix<R>;
+            fn $method(self, rhs: &Matrix<R>) -> Self::Output {
+                assert_eq!(
+                    (self.rows, self.cols),
+                    (rhs.rows, rhs.cols),
+                    "matrix shapes do not match"
+                );
+                let entries = self
+                    .entries
+                    .iter()
+                    .zip(&rhs.entries)
+                    .map(|(x, y)| x.$method(y))
+                    .collect();
+                Matrix::new(self.ring.clone(), self.rows, self.cols, entries)
+            }
+        }
+    )*};
+}
+matrix_borrowed_entrywise_ops!(Add, add; Sub, sub);
+
+impl<R> Mul<&Matrix<R>> for &Matrix<R>
+where
+    R: Ring + Clone,
+    R::E: RingOps,
+    for<'c> &'c R::E: Mul<&'c R::E, Output = R::E>,
+{
+    type Output = Matrix<R>;
+    fn mul(self, rhs: &Matrix<R>) -> Self::Output {
+        assert_eq!(
+            self.cols, rhs.rows,
+            "cannot multiply {}x{} by {}x{}",
+            self.rows, self.cols, rhs.rows, rhs.cols
+        );
+        Matrix::from_fn(self.ring.clone(), self.rows, rhs.cols, |i, j| {
+            (0..self.cols).fold(self.ring.zero(), |sum, k| {
+                sum + self.get(i, k) * rhs.get(k, j)
+            })
+        })
+    }
+}
+
+forward_ref_binops!(
+    Matrix<R>,
+    { R: Ring + Clone, R::E: RingOps, },
+    Add, add; Sub, sub; Mul, mul
+);
+
 /// Compound assignment, written directly so it carries no binder.
 macro_rules! matrix_assign_ops {
     ($($op:ident, $method:ident, $base_method:ident);* $(;)?) => {$(
@@ -457,33 +513,26 @@ mod tests {
         let b = r.element(vec![int(0), int(1), int(1), int(0)]);
 
         // Entry-wise addition.
-        assert_eq!(
-            a.clone() + b.clone(),
-            r.element(vec![int(1), int(3), int(4), int(4)])
-        );
+        assert_eq!(&a + &b, r.element(vec![int(1), int(3), int(4), int(4)]));
 
         // b swaps the columns of a.
-        assert_eq!(
-            a.clone() * b.clone(),
-            r.element(vec![int(2), int(1), int(4), int(3)])
-        );
+        assert_eq!(&a * &b, r.element(vec![int(2), int(1), int(4), int(3)]));
         // ...and swaps a's rows on the other side, so it does not commute.
-        assert_eq!(
-            b.clone() * a.clone(),
-            r.element(vec![int(3), int(4), int(1), int(2)])
-        );
-        assert_ne!(a.clone() * b.clone(), b * a.clone());
+        assert_eq!(&b * &a, r.element(vec![int(3), int(4), int(1), int(2)]));
+        assert_ne!(&a * &b, &b * &a);
+        // All four owned/borrowed combinations resolve.
+        assert_eq!(a.clone() * &b, &a * b.clone());
 
         // Ring axioms.
-        assert_eq!(a.clone() * r.identity(), a);
-        assert_eq!(a.clone() + r.zero(), a);
-        assert_eq!(a.clone() - a.clone(), r.zero());
+        assert_eq!(&a * r.identity(), a);
+        assert_eq!(&a + r.zero(), a);
+        assert_eq!(&a - &a, r.zero());
 
         // Rectangles multiply when the inner dimensions agree: 2x3 by 3x2.
         let p = m(2, 3, &[1, 2, 3, 4, 5, 6]);
         let q = m(3, 2, &[7, 8, 9, 10, 11, 12]);
-        assert_eq!(p.clone() * q.clone(), m(2, 2, &[58, 64, 139, 154]));
-        assert_eq!(q * p, m(3, 3, &[39, 54, 69, 49, 68, 87, 59, 82, 105]));
+        assert_eq!(&p * &q, m(2, 2, &[58, 64, 139, 154]));
+        assert_eq!(&q * &p, m(3, 3, &[39, 54, 69, 49, 68, 87, 59, 82, 105]));
     }
 
     #[test]
@@ -510,10 +559,7 @@ mod tests {
         // det(AB) = det(A) det(B).
         let a = m(3, 3, &[1, 2, 0, 3, -1, 2, 0, 4, 1]);
         let b = m(3, 3, &[2, 0, 1, 1, 3, 0, 0, 2, 4]);
-        assert_eq!(
-            (a.clone() * b.clone()).determinant(),
-            a.determinant() * b.determinant()
-        );
+        assert_eq!((&a * &b).determinant(), a.determinant() * b.determinant());
     }
 
     #[test]
@@ -525,8 +571,8 @@ mod tests {
 
         let a = r.element(vec![e(2), e(1), e(0), e(1), e(1), e(0), e(0), e(0), e(3)]);
         let inv = a.inverse().expect("invertible over F_7");
-        assert_eq!(a.clone() * inv.clone(), r.identity());
-        assert_eq!(inv * a, r.identity());
+        assert_eq!(&a * &inv, r.identity());
+        assert_eq!(&inv * &a, r.identity());
 
         // The identity inverts to itself.
         assert_eq!(r.identity().inverse().unwrap(), r.identity());
@@ -543,9 +589,9 @@ mod tests {
         assert_eq!(det, e(5));
         let det_inv = f7.invert(&det).unwrap();
         let expected = r2.element(vec![
-            e(4) * det_inv.clone(),
-            (e(0) - e(2)) * det_inv.clone(),
-            (e(0) - e(3)) * det_inv.clone(),
+            e(4) * &det_inv,
+            (e(0) - e(2)) * &det_inv,
+            (e(0) - e(3)) * &det_inv,
             e(1) * det_inv,
         ]);
         assert_eq!(b.inverse().unwrap(), expected);
