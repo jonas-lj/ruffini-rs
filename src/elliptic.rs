@@ -8,7 +8,9 @@
 //! need extension field towers this crate does not build yet, and getting one subtly
 //! wrong is not the kind of bug tests here would catch.
 
+use crate::pow::pow;
 use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, RingOps};
+use std::ops::MulAssign;
 use num_bigint::{BigInt, Sign};
 use std::fmt;
 use std::ops::{Add, AddAssign, Neg, Sub};
@@ -44,17 +46,22 @@ where
     F::E: RingOps + Eq,
 {
     /// The curve `y^2 = x^3 + ax + b`, or [`None`] if it is singular.
-    pub fn new(field: F, a: F::E, b: F::E) -> Option<Rc<Self>> {
+    pub fn new(field: F, a: F::E, b: F::E) -> Option<Rc<Self>>
+    where
+        F::E: for<'x> MulAssign<&'x F::E>,
+    {
         let curve = Curve { field, a, b };
         (curve.discriminant() != curve.field.zero()).then(|| Rc::new(curve))
     }
 
     /// `-16(4a^3 + 27b^2)`, zero exactly when the curve is singular.
-    pub fn discriminant(&self) -> F::E {
+    pub fn discriminant(&self) -> F::E
+    where
+        F::E: for<'x> MulAssign<&'x F::E>,
+    {
         let f = &self.field;
-        let a3 = self.a.clone() * self.a.clone() * self.a.clone();
-        let b2 = self.b.clone() * self.b.clone();
-        let inner = f.from_integer(4) * a3 + f.from_integer(27) * b2;
+        let inner =
+            f.from_integer(4) * pow(f, &self.a, 3) + f.from_integer(27) * pow(f, &self.b, 2);
         f.zero() - f.from_integer(16) * inner
     }
 
