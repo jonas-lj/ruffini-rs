@@ -492,34 +492,30 @@ where
 {
 }
 
-/// Polynomial long division. Requires `R: Field` so leading coefficients can be inverted.
-/// Panics if the divisor is the zero polynomial.
-impl<R> DivRem for Polynomial<R>
+impl<R> Polynomial<R>
 where
-    R: Field,
+    R: Ring,
     R::E: RingOps + Eq,
 {
-    fn div_rem(&self, divisor: &Self) -> (Self, Self) {
+    /// Long division, given the inverse of the divisor's leading coefficient.
+    ///
+    /// Nothing else needs inverting, which is what lets division work over a ring
+    /// rather than only a field.
+    fn divide_by(&self, divisor: &Self, lead_inverse: &R::E) -> (Self, Self) {
         debug_assert!(
             Rc::ptr_eq(&self.ring, &divisor.ring),
             "Polynomial operands belong to different rings"
         );
-        let coeff_ring = &self.ring.coeff_ring;
-        let zero_c = coeff_ring.zero();
-
-        let lead_b = divisor.lead().expect("division by zero polynomial");
-        let lead_b_inv = coeff_ring
-            .invert(lead_b)
-            .expect("leading coefficient must be invertible in a field");
-        let deg_b = divisor.coefficients.len() - 1;
+        let zero_c = self.ring.coeff_ring.zero();
+        let degree = divisor.coefficients.len() - 1;
 
         let mut r: Vec<R::E> = self.coefficients.clone();
         let mut q: Vec<R::E> = Vec::new();
 
-        while r.len() > deg_b {
+        while r.len() > degree {
             // c = leading(r) / leading(divisor)
-            let c = r.last().unwrap().clone() * lead_b_inv.clone();
-            let k = r.len() - 1 - deg_b;
+            let c = r.last().unwrap().clone() * lead_inverse.clone();
+            let k = r.len() - 1 - degree;
 
             // r -= c * x^k * divisor
             for j in 0..divisor.coefficients.len() {
@@ -542,10 +538,42 @@ where
             }
         }
 
-        (
-            self.ring.element(q),
-            self.ring.element(r),
-        )
+        (self.ring.element(q), self.ring.element(r))
+    }
+
+    /// Division by a monic divisor, which works over any ring.
+    ///
+    /// A monic leading coefficient is its own inverse, so unlike [`DivRem::div_rem`]
+    /// this needs no field. Reduction modulo `x^n - 1`, say, is fine over `Z`.
+    ///
+    /// # Panics
+    /// If the divisor is zero or is not monic.
+    pub fn div_rem_monic(&self, divisor: &Self) -> (Self, Self) {
+        let one = self.ring.coeff_ring.identity();
+        assert!(
+            divisor.lead().expect("division by zero polynomial") == &one,
+            "divisor is not monic"
+        );
+        self.divide_by(divisor, &one)
+    }
+}
+
+/// Polynomial long division. Requires `R: Field` so leading coefficients can be
+/// inverted; see [`Polynomial::div_rem_monic`] for the case that does not.
+/// Panics if the divisor is the zero polynomial.
+impl<R> DivRem for Polynomial<R>
+where
+    R: Field,
+    R::E: RingOps + Eq,
+{
+    fn div_rem(&self, divisor: &Self) -> (Self, Self) {
+        let lead = divisor.lead().expect("division by zero polynomial");
+        let lead_inverse = self
+            .ring
+            .coeff_ring
+            .invert(lead)
+            .expect("leading coefficient must be invertible in a field");
+        self.divide_by(divisor, &lead_inverse)
     }
 }
 

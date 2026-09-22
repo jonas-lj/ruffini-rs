@@ -238,6 +238,53 @@ mod tests {
     }
 
     #[test]
+    fn monic_division_works_over_a_ring() {
+        // Z is not a field, so DivRem is unavailable here, but a monic divisor needs
+        // no inversion.
+        let zx = Integers::default().polynomials();
+        let poly = |c: Vec<i64>| zx.element(c.into_iter().map(int).collect::<Vec<_>>());
+
+        // (x^2 - 1) = (x + 1)(x - 1), exactly.
+        let (q, r) = poly(vec![-1, 0, 1]).div_rem_monic(&poly(vec![1, 1]));
+        assert_eq!(q, poly(vec![-1, 1]));
+        assert_eq!(r, zx.zero());
+
+        // 2x^3 + 3 divided by x^2 - 1: quotient 2x, remainder 2x + 3.
+        let f = poly(vec![3, 0, 0, 2]);
+        let d = poly(vec![-1, 0, 1]);
+        let (q, r) = f.div_rem_monic(&d);
+        assert_eq!(q, poly(vec![0, 2]));
+        assert_eq!(r, poly(vec![3, 2]));
+        assert_eq!(&q * &d + &r, f);
+
+        // Reduction modulo x^n - 1 is the group ring's multiplication: x^4 * x^3 = x^2
+        // when n = 5, since x^5 = 1.
+        let n_minus_1 = poly(vec![-1, 0, 0, 0, 0, 1]);
+        let product = poly(vec![0, 0, 0, 0, 1]) * poly(vec![0, 0, 0, 1]);
+        assert_eq!(product.div_rem_monic(&n_minus_1).1, poly(vec![0, 0, 1]));
+
+        // Non-integer coefficients are untouched: dividing by a monic divisor never
+        // introduces a fraction, so this stays in Z[x].
+        let (q, r) = poly(vec![1, 1, 1, 1]).div_rem_monic(&poly(vec![2, 1]));
+        assert_eq!(&q * &poly(vec![2, 1]) + &r, poly(vec![1, 1, 1, 1]));
+
+        // The field path agrees where both apply.
+        let f7 = Integers::modulo(7);
+        let f7x = f7.polynomials();
+        let g = f7x.element(vec![f7.element(3), f7.element(0), f7.element(1)]);
+        let h = f7x.element(vec![f7.element(5), f7.element(1)]);
+        assert_eq!(g.div_rem(&h), g.div_rem_monic(&h));
+    }
+
+    #[test]
+    #[should_panic(expected = "not monic")]
+    fn monic_division_rejects_a_non_monic_divisor() {
+        let zx = Integers::default().polynomials();
+        let poly = |c: Vec<i64>| zx.element(c.into_iter().map(int).collect::<Vec<_>>());
+        poly(vec![1, 1, 1]).div_rem_monic(&poly(vec![1, 2]));
+    }
+
+    #[test]
     fn polynomial_gcd_in_f7_x_is_monic() {
         let f7 = Integers::modulo(7);
         let f7x = f7.polynomials();
