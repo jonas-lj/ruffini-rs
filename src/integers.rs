@@ -9,7 +9,7 @@ use num_bigint::BigInt;
 use std::ops::{AddAssign, MulAssign, SubAssign};
 use std::rc::Rc;
 
-/// Handle for the set of integers; used to construct [`Integer`] values.
+/// Handle for the set of integers, used to construct [`Integer`] values.
 #[derive(Default, Clone, Debug)]
 pub struct Integers {}
 

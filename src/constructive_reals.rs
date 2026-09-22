@@ -22,7 +22,7 @@ const UNKNOWN_MSD: i32 = i32::MIN;
 #[derive(Clone)]
 pub struct ConstructiveReal(Rc<Node>);
 
-/// Handle for the constructive reals; the [`Ring`] impls hang off this.
+/// Handle for the constructive reals, which the [`Ring`] impls hang off.
 #[derive(Default, Clone, Debug)]
 pub struct ConstructiveReals;
 
@@ -70,7 +70,7 @@ struct Node {
     cache: RefCell<Option<Approximation>>,
 }
 
-/// `max_appr` is `get_appr(min_prec)`; coarser precisions scale down from it.
+/// `max_appr` is `get_appr(min_prec)`, and coarser precisions scale down from it.
 struct Approximation {
     min_prec: i32,
     max_appr: BigInt,
@@ -84,7 +84,7 @@ enum Op {
     Add(ConstructiveReal, ConstructiveReal),
     /// Negation.
     Neg(ConstructiveReal),
-    /// `op · 2^count` (a left shift; `count` may be negative).
+    /// `op · 2^count`, a left shift, where `count` may be negative.
     Shift(ConstructiveReal, i32),
     /// Product of two reals.
     Mul(ConstructiveReal, ConstructiveReal),
@@ -230,7 +230,7 @@ impl ConstructiveReal {
         self.known_msd()
     }
 
-    /// Compare at one precision; `None` when the values are too close to tell.
+    /// Compare at one precision, giving `None` when the values are too close to tell.
     pub fn compare_at(&self, other: &ConstructiveReal, precision: i32) -> Option<Ordering> {
         let needed = precision - 1;
         let this_appr = self.get_appr(needed);

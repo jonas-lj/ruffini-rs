@@ -169,7 +169,7 @@ where
     ///
     /// No term of the remainder is divisible by any divisor's leading monomial. The
     /// result depends both on `order` and on the order of `divisors`, which is why this
-    /// is not a Euclidean division and the ring is not a [`EuclideanDomain`].
+    /// is not a Euclidean division and the ring is not a [`crate::structures::EuclideanDomain`].
     ///
     /// # Panics
     /// If any divisor is zero.

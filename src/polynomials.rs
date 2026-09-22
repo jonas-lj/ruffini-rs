@@ -248,7 +248,7 @@ where
     }
 }
 
-/// Coefficient-wise addition of two borrowed polynomials; the shorter one is padded
+/// Coefficient-wise addition of two borrowed polynomials. The shorter one is padded
 /// by carrying its counterpart's remaining coefficients through unchanged.
 impl<R> Add<&Polynomial<R>> for &Polynomial<R>
 where
