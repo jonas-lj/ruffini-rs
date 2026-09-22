@@ -114,7 +114,7 @@ where
 {
     /// The determinant, by cofactor expansion along the first column.
     ///
-    /// Needs no division, so it works over any ring, but costs `O(n!)`; over a field
+    /// Needs no division, so it works over any ring, but costs `O(n!)`. Over a field
     /// Gaussian elimination would be `O(n^3)`.
     ///
     /// # Panics
@@ -143,7 +143,7 @@ where
 {
     /// The inverse, or [`None`] if the matrix is singular.
     ///
-    /// Gauss-Jordan elimination on `[self | I]`; needs a field to scale pivot rows.
+    /// Gauss-Jordan elimination on `[self | I]`, which needs a field to scale pivot rows.
     ///
     /// # Panics
     /// If the matrix is not square.
