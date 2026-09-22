@@ -5,11 +5,8 @@ use crate::structures::{CommutativeMonoid, Domain, Field, RingOps};
 use std::rc::Rc;
 
 /// Multiplies every coefficient by `c`.
-///
-/// Both clones are forced. `p` is a basis polynomial that later calls reuse, so its
-/// coefficients cannot be moved out, and the owned `Mul` consumes `c`. The borrowed
-/// form would need `for<'a> &'a R::E: Mul<&'a R::E>`, which overflows trait
-/// resolution through `Matrix`'s own recursive borrowed operators.
+// Both clones are forced: the basis is reused, so its coefficients cannot move out,
+// and the borrowed Mul needs an HRTB that overflows through Matrix.
 fn scale<R>(ring: &Rc<PolynomialRing<R>>, p: &Polynomial<R>, c: &R::E) -> Polynomial<R>
 where
     R: Field + Clone,
@@ -23,11 +20,9 @@ where
     )
 }
 
-/// Interpolation at a fixed set of nodes.
-///
-/// The Lagrange basis depends only on the x values, so building it once makes each
-/// later interpolation a linear combination: `O(k^2)` to construct, `O(k^2)` per call
-/// for the scaling, against `O(k^2)` polynomial products if rebuilt each time.
+/// Interpolation at a fixed set of nodes, keeping the Lagrange basis for reuse.
+// The basis depends only on the x values, so each later call is a linear combination
+// rather than k^2 further polynomial products.
 pub struct Interpolation<R>
 where
     R: Field + Clone,
@@ -48,9 +43,8 @@ where
         let field = ring.coefficients().clone();
         let basis = (0..nodes.len())
             .map(|j| {
-                // l_j = prod_{m != j} (X - x_m) / (x_j - x_m). Gathering the scalars
-                // needs one inversion, and starting the product from that constant
-                // folds the scaling in rather than making a second pass.
+                // l_j = prod_{m != j} (X - x_m) / (x_j - x_m). Starting the product
+                // from the scalar folds the division in, avoiding a second pass.
                 let mut denominator = field.identity();
                 for (m, x_m) in nodes.iter().enumerate() {
                     if m != j {
@@ -77,10 +71,7 @@ where
         self.basis.len()
     }
 
-    /// The polynomial taking `values[j]` at node `j`.
-    ///
-    /// # Panics
-    /// If `values` does not have one entry per node.
+    /// The polynomial taking `values[j]` at node `j`. Panics on a wrong value count.
     pub fn apply(&self, values: &[R::E]) -> Polynomial<R> {
         assert_eq!(
             values.len(),
@@ -97,13 +88,7 @@ where
 }
 
 /// The lowest-degree polynomial with `p(x[i]) == y[i]`, or [`None`] if two x values
-/// coincide.
-///
-/// Builds the Lagrange basis and discards it. Use [`Interpolation`] to interpolate
-/// repeatedly at the same nodes.
-///
-/// # Panics
-/// If `x` and `y` differ in length.
+/// coincide. See [`Interpolation`] to reuse the basis; panics on mismatched lengths.
 pub fn interpolate<R>(
     ring: &Rc<PolynomialRing<R>>,
     x: &[R::E],
