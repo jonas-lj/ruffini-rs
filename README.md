@@ -28,6 +28,8 @@ Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Fi
 - **`MatrixRing<R>`** — the `n x n` matrices over `R`, itself a ring. `Matrix` is any
   shape, with determinant by cofactor expansion (over any ring) and inversion by
   Gauss-Jordan (over a field).
+- **`Curve<F>`** — elliptic curves `y^2 = x^3 + ax + b` in affine coordinates. The
+  points form an additive group; no pairings (see the module docs).
 - **`ConstructiveReals`** — computable reals, held lazily as expression trees and
   evaluated to any requested precision. Equality is undecidable, so they form a
   `Ring` but not a `Field`; see `cargo run --example sqrt2`.
