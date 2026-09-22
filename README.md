@@ -72,6 +72,13 @@ let f7x = f7.polynomials(); // F_7[x], and f7x.polynomials() is F_7[x][y]
 assert_eq!(f7x.element(vec![f7.element(1), f7.element(2)]).degree(), Some(1));
 ```
 
+## Demos
+
+```text
+cargo run --release --example sqrt2              # constructive reals
+cargo run --release --example hadamard -- 23     # Hadamard matrix of order 92
+```
+
 ## Build & test
 
 ```text
