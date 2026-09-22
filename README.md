@@ -35,6 +35,10 @@ Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Fi
 `Domain::E` does not require `Eq` — only `EuclideanDomain` and `Field` do, since
 those are where an algorithm tests for zero.
 
+Polynomial interpolation is in `interpolation`: `interpolate(&ring, &x, &y)` for a
+one-off, or `Interpolation::new(&ring, &x)` to reuse the Lagrange basis across
+several value sets.
+
 `Field::invert` and the generic `extended_gcd` both rely on
 `EuclideanDomain::unit_part` / `unit_inverse` to canonicalise gcds — non-negative
 for `Z`, monic for `R[x]`.
