@@ -25,6 +25,9 @@ Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Fi
 - **`MultivariatePolynomialRing<R>`** — `R[x_0, .., x_{n-1}]`, with the variable
   count a run-time value rather than a type-level one, and terms stored sparsely
   by exponent vector.
+- **`MatrixRing<R>`** — the `n x n` matrices over `R`, itself a ring. `Matrix` is any
+  shape, with determinant by cofactor expansion (over any ring) and inversion by
+  Gauss-Jordan (over a field).
 - **`ConstructiveReals`** — computable reals, held lazily as expression trees and
   evaluated to any requested precision. Equality is undecidable, so they form a
   `Ring` but not a `Field`; see `cargo run --example sqrt2`.
