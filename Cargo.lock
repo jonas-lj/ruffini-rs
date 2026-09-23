@@ -97,6 +97,7 @@ dependencies = [
  "derive_more",
  "itertools",
  "num-bigint",
+ "num-traits",
 ]
 
 [[package]]

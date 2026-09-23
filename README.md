@@ -77,6 +77,7 @@ assert_eq!(f7x.element(vec![f7.element(1), f7.element(2)]).degree(), Some(1));
 ```text
 cargo run --release --example sqrt2              # constructive reals
 cargo run --release --example hadamard -- 23     # Hadamard matrix of order 92
+cargo run --release --example aks                # AKS primality test
 ```
 
 ## Build & test
