@@ -11,7 +11,7 @@ use num_traits::{One, Zero};
 use ruffini::integers::Integers;
 use ruffini::polynomials::{Polynomial, RingExt};
 use ruffini::pow::pow;
-use ruffini::structures::{Domain, QuotientRing};
+use ruffini::structures::{Domain, EuclideanDomain, QuotientRing};
 use std::rc::Rc;
 
 type Zn = Rc<QuotientRing<Integers>>;
@@ -74,7 +74,7 @@ fn aks(n: &BigInt) -> bool {
     // inverts anything: x^r - 1 is monic, so reduction never needs a division.
     let zn = Integers::modulo(n.clone());
     let znx = zn.polynomials();
-    let ring = QuotientRing::new(znx.clone(), cyclotomic_modulus(&zn, &znx, r as usize));
+    let ring = znx.quotient(cyclotomic_modulus(&zn, &znx, r as usize));
 
     // x^n, computed once and reused for every witness.
     let x = ring.element(znx.element(vec![zn.element(0), zn.element(1)]));

@@ -69,6 +69,12 @@ mod tests {
         assert_eq!(f7.zero(), f7.element(0));
         assert_eq!(f7.identity(), f7.element(1));
 
+        // `quotient` builds the same ring as the Integers::modulo shorthand.
+        assert_eq!(
+            Integers::default().quotient(int(7)).element(9),
+            f7.element(2)
+        );
+
         // `eq` compares plain integers as representatives, without naming elements
         assert!(f7.eq(3 + 6, 2));
         assert!(!f7.eq(3 + 6, 3));

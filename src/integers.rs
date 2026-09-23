@@ -23,7 +23,7 @@ impl Integers {
     /// The ring of integers modulo `modulus`, e.g. `Integers::modulo(7)`. A prime
     /// modulus gives the finite field `F_p`.
     pub fn modulo(modulus: impl Into<Integer>) -> Rc<QuotientRing<Integers>> {
-        QuotientRing::new(Integers::default(), modulus.into())
+        Integers::default().quotient(modulus.into())
     }
 }
 
