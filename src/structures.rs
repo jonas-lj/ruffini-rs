@@ -158,6 +158,14 @@ where
     /// when the input is a unit of the domain (e.g. produced by [`Self::unit_part`]).
     fn unit_inverse(&self, u: &Self::E) -> Self::E;
 
+    /// The quotient ring `Self / (modulus)`.
+    fn quotient(&self, modulus: Self::E) -> Rc<QuotientRing<Self>>
+    where
+        Self: Clone + Sized,
+    {
+        QuotientRing::new(self.clone(), modulus)
+    }
+
     /// Returns `(gcd, x, y)` with `x * a + y * b == gcd`. See
     /// [`crate::euclidean::extended_gcd`], which this forwards to.
     fn extended_gcd(&self, a: Self::E, b: Self::E) -> (Self::E, Self::E, Self::E)
