@@ -3,10 +3,6 @@
 //! The points form an [`AdditiveGroup`] under the chord-and-tangent law, with the
 //! point at infinity as the identity. The base field must not have characteristic 2
 //! or 3, which this form assumes.
-//!
-//! No pairings. They are the part of the Java library that was never audited, they
-//! need extension field towers this crate does not build yet, and getting one subtly
-//! wrong is not the kind of bug tests here would catch.
 
 use crate::pow::pow;
 use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, RingOps};
