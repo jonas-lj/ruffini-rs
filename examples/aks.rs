@@ -78,7 +78,8 @@ fn aks(n: &BigInt) -> bool {
 
     // x^n, computed once and reused for every witness.
     let x = ring.element(znx.element(vec![zn.element(0), zn.element(1)]));
-    let x_to_n = pow(&ring, &x, n.clone());
+    // `n` again, owned, from the ring that already holds it as its modulus.
+    let x_to_n = pow(&ring, &x, zn.order());
 
     // (x + a)^n == x^n + a must hold for every a below sqrt(phi(r)) * log2(n).
     let limit = (isqrt(totient(r)) * log2 as u64).max(1);
