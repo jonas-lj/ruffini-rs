@@ -1,12 +1,12 @@
 //! Williamson's construction of a Hadamard matrix of order 4n.
 //!
 //! Follows J. S. Wallis, "Construction of Williamson type matrices", Linear and
-//! Multilinear Algebra 3 (1975) 197-207, and the demo of the same name in the Java
-//! Ruffini library.
+//! Multilinear Algebra 3 (1975) 197-207.
 //!
 //! Run with `cargo run --release --example hadamard -- [n]`, default n = 11. The
 //! method needs `(n-1)/2 >= 4`, so n = 9 is the smallest it can do. n = 23 gives
-//! order 92, the case the Java demo targets, and takes about half a minute.
+//! order 92, which is the order the Wallis paper set out to construct, and takes
+//! about half a minute.
 
 use num_bigint::BigInt;
 use ruffini::integers::{Integer, Integers};
