@@ -516,6 +516,16 @@ where
             zero.clone()
         })
     }
+
+    /// Stops at the first nonzero entry, where the default would build the whole
+    /// `n x n` zero matrix and then compare against it.
+    ///
+    /// The shape is checked too, since `Self::E` is a matrix of any shape and the
+    /// default would have rejected one of the wrong size.
+    fn is_zero(&self, x: &Self::E) -> bool {
+        let zero = self.base.zero();
+        x.rows == self.dimension && x.cols == self.dimension && x.entries.iter().all(|e| *e == zero)
+    }
 }
 
 impl<R> AdditiveGroup for Rc<MatrixRing<R>>
@@ -585,6 +595,33 @@ mod tests {
             cols,
             e.iter().map(|n| int(*n)).collect(),
         )
+    }
+
+    #[test]
+    fn the_is_zero_override_answers_exactly_what_the_default_would() {
+        let ring = zm(2);
+        // What CommutativeMonoid::is_zero does without the override.
+        let by_the_default = |x: &Matrix<Integers>| *x == ring.zero();
+
+        for candidate in [
+            m(2, 2, &[0, 0, 0, 0]),
+            m(2, 2, &[0, 0, 0, 1]),
+            m(2, 2, &[1, 0, 0, 0]),
+            m(2, 2, &[-1, 2, 3, -4]),
+            // Wrong shapes: all-zero entries, but not this ring's zero.
+            m(1, 1, &[0]),
+            m(2, 3, &[0, 0, 0, 0, 0, 0]),
+            m(3, 3, &[0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        ] {
+            assert_eq!(
+                ring.is_zero(&candidate),
+                by_the_default(&candidate),
+                "for {candidate}"
+            );
+        }
+
+        assert!(ring.is_zero(&ring.zero()));
+        assert!(!ring.is_zero(&ring.identity()));
     }
 
     #[test]

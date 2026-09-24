@@ -104,6 +104,28 @@ mod tests {
     }
 
     #[test]
+    fn is_zero_recognises_the_additive_identity() {
+        let z = Integers::default();
+        assert!(z.is_zero(&z.zero()));
+        assert!(!z.is_zero(&int(1)));
+        assert!(!z.is_zero(&int(-1)));
+
+        // In a quotient the test is on the class, not the representative: 7 and -7
+        // both stand for zero mod 7, whichever way they were written down.
+        let f7 = Integers::modulo(7);
+        assert!(f7.is_zero(&f7.zero()));
+        assert!(f7.is_zero(&f7.element(7)));
+        assert!(f7.is_zero(&f7.element(-7)));
+        assert!(!f7.is_zero(&f7.element(1)));
+
+        // The zero polynomial, however it was built.
+        let zx = z.polynomials();
+        assert!(zx.is_zero(&zx.zero()));
+        assert!(zx.is_zero(&zx.element(vec![int(0), int(0)])));
+        assert!(!zx.is_zero(&zx.indeterminate()));
+    }
+
+    #[test]
     fn prime_field_f7() {
         let f7 = Integers::modulo(7);
 
