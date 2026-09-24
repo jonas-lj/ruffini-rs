@@ -23,7 +23,9 @@ pub mod constructive_reals;
 pub mod elliptic;
 pub mod euclidean;
 pub mod fft;
-pub mod grobner;
+// Rust will not infer a file name for a non-ascii module (E0754), so it is spelled out.
+#[path = "gröbner.rs"]
+pub mod gröbner;
 pub mod integers;
 pub mod interpolation;
 pub mod matrices;

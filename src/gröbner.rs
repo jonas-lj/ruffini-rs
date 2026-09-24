@@ -20,7 +20,7 @@ use std::rc::Rc;
 ///
 /// The empty ideal gives an empty basis. Worst-case cost is doubly exponential in the
 /// number of variables, which is intrinsic to the problem rather than to this code.
-pub fn grobner_basis<R>(
+pub fn gröbner_basis<R>(
     ring: &Rc<MultivariatePolynomialRing<R>>,
     generators: &[MultivariatePolynomial<R>],
     order: &impl MonomialOrder,
@@ -261,7 +261,7 @@ mod tests {
     ///
     /// Computed over all pairs, with no criterion applied, so this also catches a
     /// `discard` that skipped a pair it should not have.
-    fn is_grobner_basis<R>(
+    fn is_gröbner_basis<R>(
         ring: &Rc<MultivariatePolynomialRing<R>>,
         basis: &[MultivariatePolynomial<R>],
         order: &impl MonomialOrder,
@@ -289,18 +289,18 @@ mod tests {
         let generators = [f1, f2];
 
         // Graded lex: {x^2, xy, y^2 - x/2}, and 1/2 is 4 in F_7, so -x/2 is 3x.
-        let grlex = grobner_basis(&r, &generators, &GradedLex);
+        let grlex = gröbner_basis(&r, &generators, &GradedLex);
         assert_eq!(
             grlex,
             vec![x.pow(2), x.clone() * y.clone(), y.pow(2) + 3 * x.clone()]
         );
 
         // Lex eliminates x, which is the property the order is chosen for.
-        let lex = grobner_basis(&r, &generators, &Lex);
+        let lex = gröbner_basis(&r, &generators, &Lex);
         assert_eq!(lex, vec![x.clone() - 2 * y.pow(2), y.pow(3)]);
 
-        assert!(is_grobner_basis(&r, &grlex, &GradedLex));
-        assert!(is_grobner_basis(&r, &lex, &Lex));
+        assert!(is_gröbner_basis(&r, &grlex, &GradedLex));
+        assert!(is_gröbner_basis(&r, &lex, &Lex));
     }
 
     #[test]
@@ -310,9 +310,9 @@ mod tests {
         let (x, y) = (r.variable(0), r.variable(1));
         let generators = [x.pow(2) + y.pow(2) - 1, x.clone() - y.clone()];
 
-        let basis = grobner_basis(&r, &generators, &Lex);
+        let basis = gröbner_basis(&r, &generators, &Lex);
         assert_eq!(basis, vec![x.clone() - y.clone(), y.pow(2) + 3]);
-        assert!(is_grobner_basis(&r, &basis, &Lex));
+        assert!(is_gröbner_basis(&r, &basis, &Lex));
     }
 
     #[test]
@@ -321,9 +321,9 @@ mod tests {
         // without being computed.
         let r = f7x2();
         let (x, y) = (r.variable(0), r.variable(1));
-        let basis = grobner_basis(&r, &[x.pow(2), y.pow(3)], &Lex);
+        let basis = gröbner_basis(&r, &[x.pow(2), y.pow(3)], &Lex);
         assert_eq!(basis, vec![x.pow(2), y.pow(3)]);
-        assert!(is_grobner_basis(&r, &basis, &Lex));
+        assert!(is_gröbner_basis(&r, &basis, &Lex));
     }
 
     #[test]
@@ -332,7 +332,7 @@ mod tests {
         let (x, y) = (r.variable(0), r.variable(1));
         let g1 = x.pow(3) - 2 * x.clone() * y.clone();
         let g2 = x.pow(2) * y.clone() - 2 * y.pow(2) + x.clone();
-        let expected = grobner_basis(&r, &[g1.clone(), g2.clone()], &GradedLex);
+        let expected = gröbner_basis(&r, &[g1.clone(), g2.clone()], &GradedLex);
 
         // Reordered, scaled, and with a combination thrown in: the same ideal.
         let same_ideal = [
@@ -341,10 +341,10 @@ mod tests {
             g1.clone() + g2.clone() * 5,
             r.zero(),
         ];
-        assert_eq!(grobner_basis(&r, &same_ideal, &GradedLex), expected);
+        assert_eq!(gröbner_basis(&r, &same_ideal, &GradedLex), expected);
 
         // And a basis is its own basis.
-        assert_eq!(grobner_basis(&r, &expected, &GradedLex), expected);
+        assert_eq!(gröbner_basis(&r, &expected, &GradedLex), expected);
     }
 
     #[test]
@@ -353,7 +353,7 @@ mod tests {
         let (x, y) = (r.variable(0), r.variable(1));
         let g1 = x.pow(3) - 2 * x.clone() * y.clone();
         let g2 = x.pow(2) * y.clone() - 2 * y.pow(2) + x.clone();
-        let basis = grobner_basis(&r, &[g1.clone(), g2.clone()], &GradedLex);
+        let basis = gröbner_basis(&r, &[g1.clone(), g2.clone()], &GradedLex);
 
         // Both generators are in the ideal, as is any combination of them.
         for p in [
@@ -374,21 +374,21 @@ mod tests {
         let r = f7x2();
         let (x, y) = (r.variable(0), r.variable(1));
 
-        assert!(grobner_basis(&r, &[], &Lex).is_empty());
-        assert!(grobner_basis(&r, &[r.zero(), r.zero()], &Lex).is_empty());
+        assert!(gröbner_basis(&r, &[], &Lex).is_empty());
+        assert!(gröbner_basis(&r, &[r.zero(), r.zero()], &Lex).is_empty());
 
         // A single generator is its own basis, made monic.
-        assert_eq!(grobner_basis(&r, &[x.pow(2) * 3], &Lex), vec![x.pow(2)]);
+        assert_eq!(gröbner_basis(&r, &[x.pow(2) * 3], &Lex), vec![x.pow(2)]);
 
         // x and x + 1 generate everything, so the basis is {1}.
         assert_eq!(
-            grobner_basis(&r, &[x.clone(), x.clone() + 1], &Lex),
+            gröbner_basis(&r, &[x.clone(), x.clone() + 1], &Lex),
             vec![r.identity()]
         );
 
         // Duplicate generators collapse rather than appearing twice.
         assert_eq!(
-            grobner_basis(&r, &[y.pow(2), y.pow(2) * 2], &Lex),
+            gröbner_basis(&r, &[y.pow(2), y.pow(2) * 2], &Lex),
             vec![y.pow(2)]
         );
     }
@@ -409,11 +409,11 @@ mod tests {
         let product = v.iter().fold(r.identity(), |p, x| p * x.clone());
         let generators = [rotations(1), rotations(2), rotations(3), product - 1];
 
-        let basis = grobner_basis(&r, &generators, &GradedLex);
+        let basis = gröbner_basis(&r, &generators, &GradedLex);
 
         // Validated by the S-pair criterion rather than taken on trust; the count is
         // here as a regression guard.
-        assert!(is_grobner_basis(&r, &basis, &GradedLex));
+        assert!(is_gröbner_basis(&r, &basis, &GradedLex));
         assert_eq!(basis.len(), 7);
         for g in &generators {
             assert_eq!(g.divide(&basis, &GradedLex).1, r.zero());
@@ -426,7 +426,7 @@ mod tests {
             generators[0].clone(),
             generators[2].clone(),
         ];
-        assert_eq!(grobner_basis(&r, &shuffled, &GradedLex), basis);
+        assert_eq!(gröbner_basis(&r, &shuffled, &GradedLex), basis);
     }
 
     #[test]
@@ -436,8 +436,8 @@ mod tests {
         let (x, y, z) = (r.variable(0), r.variable(1), r.variable(2));
         let generators = [y.clone() - x.pow(2), z.clone() - x.pow(3)];
 
-        let basis = grobner_basis(&r, &generators, &GradedLex);
-        assert!(is_grobner_basis(&r, &basis, &GradedLex));
+        let basis = gröbner_basis(&r, &generators, &GradedLex);
+        assert!(is_gröbner_basis(&r, &basis, &GradedLex));
 
         // y^2 - xz vanishes on the curve, so it lies in the ideal, while y - z does not.
         assert_eq!(
