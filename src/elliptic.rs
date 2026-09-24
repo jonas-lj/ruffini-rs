@@ -47,7 +47,7 @@ where
         F::E: for<'x> MulAssign<&'x F::E>,
     {
         let curve = Curve { field, a, b };
-        (curve.discriminant() != curve.field.zero()).then(|| Rc::new(curve))
+        (!curve.field.is_zero(&curve.discriminant())).then(|| Rc::new(curve))
     }
 
     /// `-16(4a^3 + 27b^2)`, zero exactly when the curve is singular.
@@ -215,7 +215,7 @@ where
         let slope = if px == qx {
             // Vertical line: the points are inverse, so the sum is the identity. This
             // also covers doubling a point of order two, where y is zero.
-            if py.clone() + qy.clone() == field.zero() {
+            if field.is_zero(&(py.clone() + qy.clone())) {
                 return curve.infinity();
             }
             // Tangent at p. Needs characteristic not 2, since it divides by 2y.
