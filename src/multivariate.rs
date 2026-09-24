@@ -22,6 +22,16 @@ pub fn divides(divisor: &Monomial, m: &Monomial) -> bool {
     divisor.len() == m.len() && divisor.iter().zip(m).all(|(d, e)| d <= e)
 }
 
+/// The least common multiple of two monomials, taking the larger exponent in each
+/// variable.
+///
+/// # Panics
+/// If the two have different arities.
+pub fn lcm(a: &Monomial, b: &Monomial) -> Monomial {
+    assert_eq!(a.len(), b.len(), "monomials have different arities");
+    a.iter().zip(b).map(|(x, y)| *x.max(y)).collect()
+}
+
 /// `m / divisor`, by subtracting exponents.
 ///
 /// # Panics
