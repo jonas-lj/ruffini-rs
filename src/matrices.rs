@@ -7,6 +7,7 @@
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, Domain, Field, Monoid, Ring, RingOps, SemiRing, Semigroup,
 };
+use num_bigint::BigInt;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 use std::rc::Rc;
@@ -103,6 +104,21 @@ where
     pub fn transpose(&self) -> Self {
         Matrix::from_fn(self.ring.clone(), self.cols, self.rows, |i, j| {
             self.get(j, i).clone()
+        })
+    }
+
+    /// Every entry multiplied by `c` on the left.
+    ///
+    /// For a square matrix this is `c·I * self`, at `rows * cols` multiplications
+    /// rather than `n^3`; unlike that product it is also defined for a rectangle.
+    /// The side matters: a coefficient ring need not be commutative.
+    ///
+    /// A coefficient cannot go on either side of `*`, because nothing rules out `R::E`
+    /// being `Matrix<R>` and the impl is then judged to overlap with matrix
+    /// multiplication. Plain integers can, and do.
+    pub fn scale(&self, c: &R::E) -> Self {
+        Matrix::from_fn(self.ring.clone(), self.rows, self.cols, |i, j| {
+            c.clone() * self.get(i, j).clone()
         })
     }
 }
@@ -355,6 +371,71 @@ forward_ref_binops!(
     Add, add; Sub, sub; Mul, mul
 );
 
+/// Scaling by a plain integer, embedded in the coefficient ring first.
+///
+/// `Mul` only. `m * 2` is unambiguous, since scaling entrywise and multiplying by
+/// `2·I` agree wherever both are defined, and scaling is the one that also works on a
+/// rectangle. `m + 1` would not be: adding the identity matrix and adding one to every
+/// entry are different matrices.
+///
+/// A generic coefficient cannot have these impls. Nothing rules out `R::E` being
+/// `Matrix<R>`, so `impl<R> Mul<Matrix<R>> for R::E` is judged to overlap with matrix
+/// multiplication, and so is the same impl with the operands the other way round. A
+/// concrete integer type is never a `Matrix`, so it is free of that. Use
+/// [`Matrix::scale`] for a coefficient.
+macro_rules! matrix_scalar_mul {
+    ($($int:ty),+ $(,)?) => {$(
+        impl<R> Mul<$int> for Matrix<R>
+        where
+            R: Ring + Clone,
+            R::E: RingOps,
+        {
+            type Output = Matrix<R>;
+            fn mul(self, rhs: $int) -> Matrix<R> {
+                let c = self.ring.from_integer(rhs);
+                self.scale(&c)
+            }
+        }
+
+        impl<R> Mul<$int> for &Matrix<R>
+        where
+            R: Ring + Clone,
+            R::E: RingOps,
+        {
+            type Output = Matrix<R>;
+            fn mul(self, rhs: $int) -> Matrix<R> {
+                let c = self.ring.from_integer(rhs);
+                self.scale(&c)
+            }
+        }
+
+        impl<R> Mul<Matrix<R>> for $int
+        where
+            R: Ring + Clone,
+            R::E: RingOps,
+        {
+            type Output = Matrix<R>;
+            fn mul(self, rhs: Matrix<R>) -> Matrix<R> {
+                let c = rhs.ring.from_integer(self);
+                rhs.scale(&c)
+            }
+        }
+
+        impl<R> Mul<&Matrix<R>> for $int
+        where
+            R: Ring + Clone,
+            R::E: RingOps,
+        {
+            type Output = Matrix<R>;
+            fn mul(self, rhs: &Matrix<R>) -> Matrix<R> {
+                let c = rhs.ring.from_integer(self);
+                rhs.scale(&c)
+            }
+        }
+    )+};
+}
+matrix_scalar_mul!(i64, BigInt);
+
 /// Compound assignment, written directly so it carries no binder.
 macro_rules! matrix_assign_ops {
     ($($op:ident, $method:ident, $base_method:ident);* $(;)?) => {$(
@@ -504,6 +585,47 @@ mod tests {
             cols,
             e.iter().map(|n| int(*n)).collect(),
         )
+    }
+
+    #[test]
+    // `0 * m` is the case under test, not a slip.
+    #[allow(clippy::erasing_op)]
+    fn scaling_by_an_integer_agrees_with_multiplying_by_n_times_the_identity() {
+        let rectangle = m(2, 3, &[1, 2, 3, 4, 5, 6]);
+        let expected = m(2, 3, &[2, 4, 6, 8, 10, 12]);
+
+        // All four operand combinations, on a shape that has no identity matrix.
+        assert_eq!(2 * rectangle.clone(), expected);
+        assert_eq!(2 * &rectangle, expected);
+        assert_eq!(rectangle.clone() * 2, expected);
+        assert_eq!(&rectangle * 2, expected);
+        assert_eq!(rectangle.scale(&int(2)), expected);
+        assert_eq!(BigInt::from(2) * rectangle.clone(), expected);
+        assert_eq!(rectangle.clone() * BigInt::from(2), expected);
+
+        // Where both are defined they are the same matrix, which is what makes the
+        // operator unambiguous.
+        let square = m(2, 2, &[1, 2, 3, 4]);
+        let two_i = m(2, 2, &[2, 0, 0, 2]);
+        assert_eq!(2 * square.clone(), &two_i * &square);
+
+        // Zero and one are not special-cased.
+        assert_eq!(0 * square.clone(), m(2, 2, &[0, 0, 0, 0]));
+        assert_eq!(1 * square.clone(), square);
+        assert_eq!(-1 * square.clone(), m(2, 2, &[-1, -2, -3, -4]));
+    }
+
+    #[test]
+    fn scale_multiplies_the_coefficient_on_the_left() {
+        // Entries that do not commute: 2x2 matrices over Z.
+        let z2 = zm(2);
+        let a = m(2, 2, &[0, 1, 0, 0]);
+        let b = m(2, 2, &[0, 0, 1, 0]);
+        assert_ne!(&a * &b, &b * &a);
+
+        let one_by_one = Matrix::new(z2.clone(), 1, 1, vec![b.clone()]);
+        assert_eq!(one_by_one.scale(&a).get(0, 0), &(&a * &b));
+        assert_ne!(one_by_one.scale(&a).get(0, 0), &(&b * &a));
     }
 
     #[test]
