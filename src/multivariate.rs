@@ -7,6 +7,7 @@
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, Domain, Field, Monoid, Ring, RingOps, SemiRing, Semigroup,
 };
+use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -380,6 +381,90 @@ where
     }
 }
 
+/// Borrowed operands for the term-wise operations, so neither side is consumed.
+///
+/// A monomial the left side lacks starts from zero, which is what turns `Sub` into a
+/// negation of the right-hand term.
+macro_rules! multivariate_ref_termwise_ops {
+    ($($op:ident, $method:ident);* $(;)?) => {$(
+        impl<R> $op<&MultivariatePolynomial<R>> for &MultivariatePolynomial<R>
+        where
+            R: Ring,
+            R::E: RingOps + Eq,
+            for<'c> &'c R::E: $op<&'c R::E, Output = R::E>,
+        {
+            type Output = MultivariatePolynomial<R>;
+            fn $method(self, rhs: &MultivariatePolynomial<R>) -> Self::Output {
+                debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+                let zero = self.ring.coeff_ring.zero();
+                let mut terms = self.terms.clone();
+                for (monomial, c) in &rhs.terms {
+                    let existing = terms.remove(monomial).unwrap_or_else(|| zero.clone());
+                    terms.insert(monomial.clone(), (&existing).$method(c));
+                }
+                prune(&self.ring.coeff_ring, &mut terms);
+                MultivariatePolynomial {
+                    terms,
+                    ring: Rc::clone(&self.ring),
+                }
+            }
+        }
+    )*};
+}
+multivariate_ref_termwise_ops!(Add, add; Sub, sub);
+
+impl<R> Mul<&MultivariatePolynomial<R>> for &MultivariatePolynomial<R>
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+    for<'c> &'c R::E: Mul<&'c R::E, Output = R::E>,
+{
+    type Output = MultivariatePolynomial<R>;
+    fn mul(self, rhs: &MultivariatePolynomial<R>) -> Self::Output {
+        debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+        let mut terms: BTreeMap<Monomial, R::E> = BTreeMap::new();
+        for (a, x) in &self.terms {
+            for (b, y) in &rhs.terms {
+                let monomial: Monomial = a.iter().zip(b).map(|(i, j)| i + j).collect();
+                let product = x * y;
+                match terms.remove(&monomial) {
+                    Some(existing) => {
+                        terms.insert(monomial, existing + product);
+                    }
+                    None => {
+                        terms.insert(monomial, product);
+                    }
+                }
+            }
+        }
+        prune(&self.ring.coeff_ring, &mut terms);
+        MultivariatePolynomial {
+            terms,
+            ring: Rc::clone(&self.ring),
+        }
+    }
+}
+
+forward_ref_binops!(
+    MultivariatePolynomial<R>,
+    { R: Ring, R::E: RingOps + Eq, },
+    Add, add; Sub, sub; Mul, mul
+);
+
+int_operand_ops!(
+    MultivariatePolynomial<R>,
+    { R: Ring, R::E: RingOps + Eq, },
+    i64,
+    BigInt
+);
+
+scalar_operand_ops!(
+    MultivariatePolynomial<R>,
+    { R: Ring, R::E: RingOps + Eq, },
+    i64,
+    BigInt
+);
+
 /// Compound assignment, swapping in the zero polynomial so the left operand is not
 /// cloned. Written directly rather than forwarding, so neither carries a binder.
 macro_rules! multivariate_assign_ops {
@@ -513,6 +598,80 @@ mod tests {
     /// `Z[x_0, x_1, x_2]`, the ring from the motivating example.
     fn zxyz() -> Rc<MultivariatePolynomialRing<Integers>> {
         Integers::default().multi_polynomials(3)
+    }
+
+    #[test]
+    fn every_operand_combination_agrees_with_the_owned_one() {
+        let r = zxyz();
+        let (x, y, z) = (r.variable(0), r.variable(1), r.variable(2));
+
+        // Overlapping and disjoint monomials, and a right side with a term the left
+        // side lacks - the case where Sub has to negate rather than combine.
+        let a = x.clone() * y.clone() + 2 * z.clone();
+        let b = x.clone() * y.clone() - z.clone() + 5;
+
+        for (name, owned, borrowed, mixed_l, mixed_r) in [
+            (
+                "add",
+                a.clone() + b.clone(),
+                &a + &b,
+                a.clone() + &b,
+                &a + b.clone(),
+            ),
+            (
+                "sub",
+                a.clone() - b.clone(),
+                &a - &b,
+                a.clone() - &b,
+                &a - b.clone(),
+            ),
+            (
+                "mul",
+                a.clone() * b.clone(),
+                &a * &b,
+                a.clone() * &b,
+                &a * b.clone(),
+            ),
+        ] {
+            assert_eq!(borrowed, owned, "{name}: &a op &b");
+            assert_eq!(mixed_l, owned, "{name}: a op &b");
+            assert_eq!(mixed_r, owned, "{name}: &a op b");
+        }
+
+        // Borrowed Sub against a side that shares no monomial at all: every term of
+        // the right operand has to come out negated.
+        assert_eq!(&x - &y, x.clone() - y.clone());
+        assert_eq!((&x - &y) + y.clone(), x.clone());
+    }
+
+    #[test]
+    fn integer_operands_embed_on_either_side() {
+        let r = zxyz();
+        let (x, y) = (r.variable(0), r.variable(1));
+
+        // An integer means that multiple of the identity.
+        assert_eq!(x.clone() + 1, x.clone() + r.identity());
+        assert_eq!(1 + x.clone(), x.clone() + r.identity());
+        assert_eq!(x.clone() * 3, r.element(vec![(vec![1, 0, 0], int(3))]));
+        assert_eq!(3 * x.clone(), x.clone() * 3);
+
+        // Subtraction pins the operand order.
+        assert_eq!(x.clone() - 1, x.clone() - r.identity());
+        assert_eq!(1 - x.clone(), r.identity() - x.clone());
+        assert_ne!(1 - x.clone(), x.clone() - 1);
+
+        // Borrowed left operand, and BigInt reaching the same impls as i64.
+        assert_eq!(&x * 3, x.clone() * 3);
+        assert_eq!(&x + 1, x.clone() + 1);
+        assert_eq!(BigInt::from(3) * x.clone(), 3 * x.clone());
+        assert_eq!(x.clone() * BigInt::from(3), x.clone() * 3);
+
+        // 2xy - 3 reads as it does on paper.
+        let p = 2 * x.clone() * y.clone() - 3;
+        assert_eq!(
+            p,
+            r.element(vec![(vec![1, 1, 0], int(2)), (vec![0, 0, 0], int(-3))])
+        );
     }
 
     #[test]
