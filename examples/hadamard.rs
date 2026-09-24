@@ -119,11 +119,8 @@ fn splits(set: &[usize], d: i64) -> Vec<(Vec<usize>, Vec<usize>)> {
 
 /// `H * H^T == 4n * I`, the defining property.
 fn is_hadamard(h: &Matrix<Integers>, order: usize) -> bool {
-    let product = h * &h.transpose();
-    let expected = Matrix::from_fn(Integers::default(), order, order, |i, j| {
-        Integer::from(if i == j { order as i64 } else { 0 })
-    });
-    product == expected
+    let expected = order as i64 * Integers::default().matrices(order).identity();
+    h * &h.transpose() == expected
 }
 
 fn main() {
@@ -234,7 +231,7 @@ fn finish(group: &GroupRing, b: &[Zp], n: usize, order: usize) {
     });
     let blocks: Vec<Matrix<Integers>> = a.iter().map(|ai| apply(ai, &u, &matrices)).collect();
 
-    let h = williamson_array(&blocks, &matrices, n);
+    let h = williamson_array(&blocks, n);
     println!("  built a {order} x {order} matrix");
     println!("  H * H^T == {order} I  ->  {}", is_hadamard(&h, order));
     println!("  entries are all +/-1  ->  {}", all_plus_minus_one(&h));
@@ -242,18 +239,16 @@ fn finish(group: &GroupRing, b: &[Zp], n: usize, order: usize) {
 
 /// Evaluates a polynomial with integer coefficients at a matrix, by Horner.
 fn apply(p: &Zp, u: &Matrix<Integers>, ring: &Rc<MatrixRing<Integers>>) -> Matrix<Integers> {
+    // The constant term of each step is `c * I`, which `scale` reaches directly -
+    // an operator cannot, since the coefficient is a ring element.
     p.coefficients().iter().rev().fold(ring.zero(), |acc, c| {
-        acc * u.clone() + ring.from_integer(BigInt::from(c.clone()))
+        acc * u.clone() + ring.identity().scale(c)
     })
 }
 
 /// The Williamson array: a 4x4 block matrix in the four circulants.
-fn williamson_array(
-    b: &[Matrix<Integers>],
-    ring: &Rc<MatrixRing<Integers>>,
-    n: usize,
-) -> Matrix<Integers> {
-    let neg = |m: &Matrix<Integers>| ring.zero() - m.clone();
+fn williamson_array(b: &[Matrix<Integers>], n: usize) -> Matrix<Integers> {
+    let neg = |m: &Matrix<Integers>| -1 * m;
     let layout = [
         [b[0].clone(), b[1].clone(), b[2].clone(), b[3].clone()],
         [neg(&b[1]), b[0].clone(), neg(&b[3]), b[2].clone()],
