@@ -23,6 +23,7 @@ pub mod constructive_reals;
 pub mod elliptic;
 pub mod euclidean;
 pub mod fft;
+pub mod grobner;
 pub mod integers;
 pub mod interpolation;
 pub mod matrices;
