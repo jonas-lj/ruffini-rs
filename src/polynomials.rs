@@ -86,6 +86,12 @@ where
     pub fn coefficients(&self) -> &R {
         &self.coeff_ring
     }
+
+    /// The indeterminate `x`, so polynomials can be written the way they are read:
+    /// `x.pow(n) - 1` rather than a padded coefficient vector.
+    pub fn indeterminate(self: &Rc<Self>) -> Polynomial<R> {
+        self.element(vec![self.coeff_ring.zero(), self.coeff_ring.identity()])
+    }
 }
 
 impl<R> Polynomial<R>
@@ -348,6 +354,15 @@ int_operand_ops!(
     i64,
     BigInt
 );
+
+scalar_operand_ops!(
+    Polynomial<R>,
+    { R: Ring, R::E: RingOps + Eq, },
+    i64,
+    BigInt
+);
+
+element_pow!(Polynomial<R>, { R: Ring, R::E: RingOps + Eq, });
 
 impl<R> fmt::Display for Polynomial<R>
 where
@@ -620,6 +635,45 @@ mod tests {
 
     fn poly(ring: &Rc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
         ring.element(coeffs.into_iter().map(int).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn an_indeterminate_and_pow_replace_the_coefficient_vector() {
+        let zx = zx();
+        let x = zx.indeterminate();
+
+        assert_eq!(x, poly(&zx, vec![0, 1]));
+        assert_eq!(x.pow(0), zx.identity());
+        assert_eq!(x.pow(1), x);
+        assert_eq!(x.pow(3), poly(&zx, vec![0, 0, 0, 1]));
+
+        // x^7 - 1, against the padded vector it used to take to write.
+        let mut coefficients = vec![-1i64];
+        coefficients.resize(7, 0);
+        coefficients.push(1);
+        assert_eq!(x.pow(7) - 1, poly(&zx, coefficients));
+
+        // pow is not just shifting: (1 + x)^3 = 1 + 3x + 3x^2 + x^3.
+        assert_eq!((1 + x.clone()).pow(3), poly(&zx, vec![1, 3, 3, 1]));
+    }
+
+    #[test]
+    fn a_scalar_on_the_left_matches_the_same_scalar_embedded() {
+        let zx = zx();
+        let x = zx.indeterminate();
+        let one = zx.identity();
+
+        assert_eq!(2 * x.pow(3), x.pow(3) * 2);
+        assert_eq!(3 + x.clone(), poly(&zx, vec![3, 1]));
+
+        // Subtraction is the one that does not commute, so it pins the operand order.
+        assert_eq!(1 - x.clone(), poly(&zx, vec![1, -1]));
+        assert_eq!(x.clone() - 1, poly(&zx, vec![-1, 1]));
+        assert_eq!(1 - x.clone(), one - x.clone());
+
+        // BigInt reaches the same impls as i64.
+        assert_eq!(BigInt::from(2) * x.clone(), 2 * x.clone());
+        assert_eq!(BigInt::from(1) - x.clone(), 1 - x.clone());
     }
 
     #[test]

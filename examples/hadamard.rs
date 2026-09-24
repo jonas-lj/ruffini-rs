@@ -29,10 +29,8 @@ struct GroupRing {
 impl GroupRing {
     fn new(n: usize) -> Self {
         let ring = Integers::default().polynomials();
-        let mut coefficients = vec![Integer::from(-1)];
-        coefficients.resize(n, Integer::from(0));
-        coefficients.push(Integer::from(1));
-        let modulus = ring.element(coefficients);
+        let x = ring.indeterminate();
+        let modulus = x.pow(n) - 1;
         GroupRing { ring, modulus }
     }
 
@@ -49,10 +47,8 @@ impl GroupRing {
     /// The coefficient is 2, not 1: it is what makes `(sum B)/2 - B_i` land on +/-1
     /// at every position later on.
     fn v(&self, n: usize, j: usize) -> Zp {
-        let mut c = vec![Integer::from(0); n];
-        c[j] = Integer::from(2);
-        c[n - j] = Integer::from(2);
-        self.ring.element(c)
+        let x = self.ring.indeterminate();
+        2 * x.pow(j) + 2 * x.pow(n - j)
     }
 }
 
@@ -144,7 +140,7 @@ fn main() {
     let group = GroupRing::new(n);
     let half = (n - 1) / 2;
     let generators: Vec<Zp> = (1..=half).map(|j| group.v(n, j)).collect();
-    let target = group.ring.element(vec![Integer::from(order as i64)]);
+    let target = group.ring.from_integer(order as i64);
 
     // Which decomposition is used matters: one can fail where another succeeds, so
     // try each in turn.

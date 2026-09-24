@@ -72,6 +72,24 @@ let f7x = f7.polynomials(); // F_7[x], and f7x.polynomials() is F_7[x][y]
 assert_eq!(f7x.element(vec![f7.element(1), f7.element(2)]).degree(), Some(1));
 ```
 
+A polynomial is usually clearer built from the indeterminate than from a
+coefficient vector. `PolynomialRing::indeterminate` gives `x`, `pow` takes any
+integer exponent, and plain integers work on either side of an operator:
+
+```rust
+use ruffini::integers::Integers;
+use ruffini::polynomials::RingExt;
+
+let zx = Integers::default().polynomials();
+let x = zx.indeterminate();
+
+let modulus = x.pow(7) - 1;       // x^7 - 1, the modulus of a group ring
+let p = 2 * x.pow(3) + 3 * x - 1; // 2x^3 + 3x - 1
+
+assert_eq!(modulus.degree(), Some(7));
+assert_eq!(p.degree(), Some(3));
+```
+
 ## Demos
 
 ```text
