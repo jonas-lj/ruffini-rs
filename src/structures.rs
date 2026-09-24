@@ -81,6 +81,19 @@ where
 {
     /// Returns the additive identity (`0`).
     fn zero(&self) -> Self::E;
+
+    /// Whether `x` is the additive identity.
+    ///
+    /// Provided as a comparison against [`zero`](Self::zero), which a structure whose
+    /// zero is expensive to build should override - a matrix ring's is an `n x n`
+    /// allocation. Needs `Eq`, which [`Domain::E`] does not, so a structure without a
+    /// decidable equality simply cannot call it.
+    fn is_zero(&self, x: &Self::E) -> bool
+    where
+        Self::E: Eq,
+    {
+        *x == self.zero()
+    }
 }
 
 /// A commutative monoid under addition where every element has an additive inverse,
@@ -238,7 +251,11 @@ where
         value.div_rem(&self.modulus).1
     }
 
-    fn is_zero(&self, a: &R::E) -> bool {
+    /// Whether a representative stands for the zero class, i.e. the modulus divides it.
+    ///
+    /// Distinct from [`CommutativeMonoid::is_zero`], which takes an element of the
+    /// quotient rather than one of the ring underneath it.
+    fn represents_zero(&self, a: &R::E) -> bool {
         a.div_rem(&self.modulus).1 == self.ring.zero()
     }
 }
@@ -263,7 +280,7 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         let diff = self.value.clone() - other.value.clone();
-        self.ring.is_zero(&diff)
+        self.ring.represents_zero(&diff)
     }
 }
 
@@ -476,7 +493,7 @@ where
     R::E: RingOps + DivRem + Eq,
 {
     fn invert(&self, x: &Self::E) -> Option<Self::E> {
-        if x == &self.zero() {
+        if self.is_zero(x) {
             return None;
         }
         let (gcd, s, _) = self.ring.extended_gcd(x.value.clone(), self.modulus.clone());
