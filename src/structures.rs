@@ -330,6 +330,23 @@ int_operand_ops!(
     BigInt
 );
 
+scalar_operand_ops!(
+    QuotientRingElement<R>,
+    { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, },
+    i64,
+    BigInt
+);
+
+element_pow!(
+    QuotientRingElement<R>,
+    {
+        R: EuclideanDomain,
+        R::E: RingOps + DivRem + Eq,
+        // `MulAssign<&Self>` carries this on, and square-and-multiply needs it.
+        for<'c> &'c R::E: Mul<&'c R::E, Output = R::E>,
+    }
+);
+
 /// Compound assignment.
 macro_rules! quotient_ring_assign_ops {
     ($($op:ident, $method:ident, $base:ident, $base_method:ident);* $(;)?) => {$(

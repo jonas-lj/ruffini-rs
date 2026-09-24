@@ -82,6 +82,25 @@ mod tests {
     }
 
     #[test]
+    fn quotient_ring_pow_and_left_scalars() {
+        let f7 = Integers::modulo(7);
+        let three = f7.element(3);
+
+        // Reduction happens at every step, so the representative stays small.
+        assert_eq!(three.pow(0), f7.identity());
+        assert_eq!(three.pow(2), f7.element(2));
+        // Fermat: a^(p-1) = 1 for a not divisible by p.
+        assert_eq!(three.pow(6), f7.identity());
+        assert_eq!(three.pow(100), f7.element(4));
+
+        // A scalar on the left is the same scalar embedded in the ring.
+        assert_eq!(2 * three.clone(), f7.element(6));
+        assert_eq!(2 + three.clone(), f7.element(5));
+        assert_eq!(1 - three.clone(), f7.element(5));
+        assert_eq!(three.clone() - 1, f7.element(2));
+    }
+
+    #[test]
     fn prime_field_f7() {
         let f7 = Integers::modulo(7);
 

@@ -398,9 +398,28 @@ macro_rules! multivariate_assign_ops {
                 *self = lhs.$base_method(rhs);
             }
         }
+
+        /// The borrowed right-hand side is cloned: terms are a map, so there is no
+        /// in-place form to forward to.
+        impl<R> $op<&MultivariatePolynomial<R>> for MultivariatePolynomial<R>
+        where
+            R: Ring,
+            R::E: RingOps + Eq,
+        {
+            fn $method(&mut self, rhs: &MultivariatePolynomial<R>) {
+                let placeholder = MultivariatePolynomial {
+                    terms: BTreeMap::new(),
+                    ring: Rc::clone(&self.ring),
+                };
+                let lhs = std::mem::replace(self, placeholder);
+                *self = lhs.$base_method(rhs.clone());
+            }
+        }
     )*};
 }
 multivariate_assign_ops!(AddAssign, add_assign, add; MulAssign, mul_assign, mul);
+
+element_pow!(MultivariatePolynomial<R>, { R: Ring, R::E: RingOps + Eq, });
 
 impl<R> Semigroup for Rc<MultivariatePolynomialRing<R>>
 where
@@ -494,6 +513,23 @@ mod tests {
     /// `Z[x_0, x_1, x_2]`, the ring from the motivating example.
     fn zxyz() -> Rc<MultivariatePolynomialRing<Integers>> {
         Integers::default().multi_polynomials(3)
+    }
+
+    #[test]
+    fn pow_expands_a_sum() {
+        let r = zxyz();
+        let (x, y) = (r.variable(0), r.variable(1));
+
+        assert_eq!(x.pow(0), r.identity());
+        assert_eq!(x.pow(3), r.element(vec![(vec![3, 0, 0], int(1))]));
+
+        // (x + y)^2 = x^2 + 2xy + y^2
+        let expected = r.element(vec![
+            (vec![2, 0, 0], int(1)),
+            (vec![1, 1, 0], int(2)),
+            (vec![0, 2, 0], int(1)),
+        ]);
+        assert_eq!((x.clone() + y.clone()).pow(2), expected);
     }
 
     #[test]
