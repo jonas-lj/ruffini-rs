@@ -37,6 +37,29 @@ Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Fi
 `Domain::E` does not require `Eq` — only `EuclideanDomain` and `Field` do, since
 those are where an algorithm tests for zero.
 
+Gröbner bases are in `gröbner`: `gröbner_basis(&ring, &generators, &order)` runs
+Buchberger's algorithm with both of his criteria and returns the *reduced* basis,
+which is unique for a given ideal and monomial order. Dividing by it decides ideal
+membership.
+
+```rust
+use ruffini::gröbner::gröbner_basis;
+use ruffini::integers::Integers;
+use ruffini::multivariate::Lex;
+use ruffini::polynomials::RingExt;
+use ruffini::structures::CommutativeMonoid;
+
+let r = Integers::modulo(7).multi_polynomials(2);
+let (x, y) = (r.variable(0), r.variable(1));
+
+// The circle meeting the line x = y: 2y^2 = 1, and 1/2 is 4 in F_7.
+let basis = gröbner_basis(&r, &[x.pow(2) + y.pow(2) - 1, x.clone() - y.clone()], &Lex);
+assert_eq!(basis, vec![x.clone() - y.clone(), y.pow(2) + 3]);
+
+// x^2 + y^2 - 1 lies in the ideal, so it reduces to zero.
+assert_eq!((x.pow(2) + y.pow(2) - 1).divide(&basis, &Lex).1, r.zero());
+```
+
 Polynomial interpolation is in `interpolation`: `interpolate(&ring, &x, &y)` for a
 one-off, or `Interpolation::new(&ring, &x)` to reuse the Lagrange basis across
 several value sets.
