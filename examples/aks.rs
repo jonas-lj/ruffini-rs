@@ -10,7 +10,6 @@ use num_bigint::BigInt;
 use num_traits::{One, Zero};
 use ruffini::integers::Integers;
 use ruffini::polynomials::{Polynomial, RingExt};
-use ruffini::pow::pow;
 use ruffini::structures::{Domain, EuclideanDomain, QuotientRing};
 use std::rc::Rc;
 
@@ -74,12 +73,12 @@ fn aks(n: &BigInt) -> bool {
     // inverts anything: x^r - 1 is monic, so reduction never needs a division.
     let zn = Integers::modulo(n.clone());
     let znx = zn.polynomials();
-    let ring = znx.quotient(cyclotomic_modulus(&zn, &znx, r as usize));
+    let ring = znx.quotient(cyclotomic_modulus(&znx, r as usize));
 
-    // x^n, computed once and reused for every witness.
-    let x = ring.element(znx.element(vec![zn.element(0), zn.element(1)]));
-    // `n` again, owned, from the ring that already holds it as its modulus.
-    let x_to_n = pow(&ring, &x, zn.order());
+    // x^n, computed once and reused for every witness. The exponent is `n` again,
+    // owned, from the ring that already holds it as its modulus.
+    let x = ring.element(znx.indeterminate());
+    let x_to_n = x.pow(zn.order());
 
     // (x + a)^n == x^n + a must hold for every a below sqrt(phi(r)) * log2(n).
     let limit = (isqrt(totient(r)) * log2 as u64).max(1);
@@ -88,19 +87,14 @@ fn aks(n: &BigInt) -> bool {
 
 /// Whether `(x + a)^n` and `x^n + a` agree in the ring.
 fn witness_agrees(ring: &Cyclotomic, znx: &ZnX, zn: &Zn, x_to_n: &<Cyclotomic as Domain>::E, a: u64) -> bool {
-    let n = zn.order();
-    let shifted = ring.element(znx.element(vec![zn.element(a), zn.element(1)]));
-    let left = pow(ring, &shifted, n);
-    let right = x_to_n.clone() + ring.element(znx.element(vec![zn.element(a)]));
-    left == right
+    let shifted = ring.element(znx.indeterminate() + a as i64);
+    shifted.pow(zn.order()) == x_to_n + a as i64
 }
 
 /// `x^r - 1` over `Z_n`.
-fn cyclotomic_modulus(zn: &Zn, znx: &ZnX, r: usize) -> Polynomial<Zn> {
-    let mut coefficients = vec![zn.element(-1)];
-    coefficients.resize(r, zn.element(0));
-    coefficients.push(zn.element(1));
-    znx.element(coefficients)
+fn cyclotomic_modulus(znx: &ZnX, r: usize) -> Polynomial<Zn> {
+    let x = znx.indeterminate();
+    x.pow(r) - 1
 }
 
 /// Whether the multiplicative order of `n` modulo `r` exceeds `bound`.
