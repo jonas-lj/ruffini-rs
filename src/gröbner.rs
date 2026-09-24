@@ -29,9 +29,11 @@ where
     R: Field + Clone,
     R::E: RingOps + Eq,
 {
-    let zero = ring.zero();
-    let mut basis: Vec<MultivariatePolynomial<R>> =
-        generators.iter().filter(|g| **g != zero).cloned().collect();
+    let mut basis: Vec<MultivariatePolynomial<R>> = generators
+        .iter()
+        .filter(|g| !ring.is_zero(g))
+        .cloned()
+        .collect();
     if basis.is_empty() {
         return Vec::new();
     }
@@ -48,7 +50,7 @@ where
 
         let s = s_polynomial(ring, &basis[i], &basis[j], order);
         let remainder = s.divide(&basis, order).1;
-        if remainder == zero {
+        if ring.is_zero(&remainder) {
             continue;
         }
 
@@ -270,11 +272,10 @@ mod tests {
         R: Field + Clone,
         R::E: RingOps + Eq,
     {
-        let zero = ring.zero();
         (0..basis.len()).all(|i| {
             (i + 1..basis.len()).all(|j| {
                 let s = s_polynomial(ring, &basis[i], &basis[j], order);
-                s.divide(basis, order).1 == zero
+                ring.is_zero(&s.divide(basis, order).1)
             })
         })
     }
