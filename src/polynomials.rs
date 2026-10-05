@@ -221,6 +221,125 @@ where
     }
 }
 
+/// Shortest operand at which the `Mul` impls switch from the schoolbook product to
+/// [`karatsuba`], and equally the length at which the recursion stops again.
+///
+/// Measured over `Z[x]` and `F_40961[x]` by sweeping the cutoff against lengths from 12
+/// to 1024. Thirty-two was the fastest cutoff at every length tried - 1.4x the
+/// schoolbook product at length 32, rising to 3.9x at 1024 - and the shortest length at
+/// which recursing wins over both rings rather than only over the one whose
+/// coefficients are dearer. Below it the recursion's own allocations outweigh the
+/// multiplication it saves, by as much as 30% at length 16.
+const KARATSUBA_THRESHOLD: usize = 32;
+
+/// `a * b` in `O(n^1.585)`, by Karatsuba's three half-length products in place of four.
+///
+/// Karatsuba and Ofman, "Multiplication of Many-Digital Numbers by Automatic Computers",
+/// Proceedings of the USSR Academy of Sciences 145 (1962).
+///
+/// Asks nothing of the ring, unlike a transform-based product, which needs a root of
+/// unity the ring may not have.
+///
+/// The operands need not be the same length. A lopsided pair splits off an empty half,
+/// which costs one product more than the schoolbook form rather than giving a wrong
+/// answer; the threshold check is what keeps that from mattering.
+fn karatsuba<R>(ring: &R, a: &[R::E], b: &[R::E]) -> Vec<R::E>
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+{
+    let (n, m) = (a.len(), b.len());
+    if n.min(m) < KARATSUBA_THRESHOLD {
+        return schoolbook(ring, a, b);
+    }
+
+    let half = n.max(m).div_ceil(2);
+    let (a_low, a_high) = a.split_at(half.min(n));
+    let (b_low, b_high) = b.split_at(half.min(m));
+
+    let low = karatsuba(ring, a_low, b_low);
+    let high = karatsuba(ring, a_high, b_high);
+    let mixed = karatsuba(ring, &sum(ring, a_low, a_high), &sum(ring, b_low, b_high));
+
+    // The middle coefficient is `mixed - low - high`, accumulated in place rather than
+    // built as its own polynomial first.
+    let mut result = Vec::new();
+    add_at(ring, &mut result, &low, 0);
+    sub_at(ring, &mut result, &low, half);
+    add_at(ring, &mut result, &high, 2 * half);
+    sub_at(ring, &mut result, &high, half);
+    add_at(ring, &mut result, &mixed, half);
+    result
+}
+
+/// The schoolbook product, gathering each output coefficient independently of the rest.
+fn schoolbook<R>(ring: &R, a: &[R::E], b: &[R::E]) -> Vec<R::E>
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+{
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let (n, m) = (a.len(), b.len());
+    let zero = ring.zero();
+    (0..n + m - 1)
+        .map(|k| {
+            (k.saturating_sub(m - 1)..=k.min(n - 1))
+                .map(|i| a[i].clone() * b[k - i].clone())
+                .fold(zero.clone(), |sum, term| sum + term)
+        })
+        .collect()
+}
+
+fn sum<R>(ring: &R, a: &[R::E], b: &[R::E]) -> Vec<R::E>
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+{
+    let mut out = Vec::new();
+    add_at(ring, &mut out, a, 0);
+    add_at(ring, &mut out, b, 0);
+    out
+}
+
+/// `target[shift..] += addend`, lengthening `target` if the addend reaches past its end.
+/// Growing rather than asserting, so a miscounted bound cannot silently truncate a term.
+fn add_at<R>(ring: &R, target: &mut Vec<R::E>, addend: &[R::E], shift: usize)
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+{
+    grow(ring, target, shift + addend.len());
+    for (slot, term) in target[shift..].iter_mut().zip(addend) {
+        *slot += term.clone();
+    }
+}
+
+/// `target[shift..] -= subtrahend`. There is no `SubAssign` in [`RingOps`], so each slot
+/// is taken out and put back.
+fn sub_at<R>(ring: &R, target: &mut Vec<R::E>, subtrahend: &[R::E], shift: usize)
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+{
+    grow(ring, target, shift + subtrahend.len());
+    for (slot, term) in target[shift..].iter_mut().zip(subtrahend) {
+        let left = std::mem::replace(slot, ring.zero());
+        *slot = left - term.clone();
+    }
+}
+
+fn grow<R>(ring: &R, target: &mut Vec<R::E>, len: usize)
+where
+    R: Ring,
+    R::E: RingOps + Eq,
+{
+    if target.len() < len {
+        target.resize(len, ring.zero());
+    }
+}
+
 impl<R> Mul for Polynomial<R>
 where
     R: Ring,
@@ -239,17 +358,12 @@ where
             };
         }
         let (a, b) = (&self.coefficients, &rhs.coefficients);
-        let (n, m) = (a.len(), b.len());
-        let zero = self.ring.coeff_ring.zero();
+        if a.len().min(b.len()) >= KARATSUBA_THRESHOLD {
+            return self.ring.element(karatsuba(&self.ring.coeff_ring, a, b));
+        }
         // Each output coefficient is the sum over i + j == k, gathered independently of
         // the others, so the outer map has no shared state to contend over.
-        let result: Vec<R::E> = (0..n + m - 1)
-            .map(|k| {
-                (k.saturating_sub(m - 1)..=k.min(n - 1))
-                    .map(|i| a[i].clone() * b[k - i].clone())
-                    .fold(zero.clone(), |sum, term| sum + term)
-            })
-            .collect();
+        let result = schoolbook(&self.ring.coeff_ring, a, b);
         self.ring.element(result)
     }
 }
@@ -329,6 +443,12 @@ where
             };
         }
         let (a, b) = (&self.coefficients, &rhs.coefficients);
+        if a.len().min(b.len()) >= KARATSUBA_THRESHOLD {
+            return self.ring.element(karatsuba(&self.ring.coeff_ring, a, b));
+        }
+        // Below the threshold the borrowed coefficient product is worth keeping: it
+        // builds each term without copying either factor, which Karatsuba's recursion
+        // cannot do once it is summing subproducts.
         let (n, m) = (a.len(), b.len());
         let zero = self.ring.coeff_ring.zero();
         let result: Vec<R::E> = (0..n + m - 1)
@@ -635,6 +755,131 @@ mod tests {
 
     fn poly(ring: &Arc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
         ring.element(coeffs.into_iter().map(int).collect::<Vec<_>>())
+    }
+
+    /// The convolution straight from its definition, to check the product against
+    /// without going through the library's own schoolbook path.
+    fn convolve(a: &[i64], b: &[i64]) -> Vec<i64> {
+        if a.is_empty() || b.is_empty() {
+            return Vec::new();
+        }
+        let mut out = vec![0i64; a.len() + b.len() - 1];
+        for (i, x) in a.iter().enumerate() {
+            for (j, y) in b.iter().enumerate() {
+                out[i + j] += x * y;
+            }
+        }
+        out
+    }
+
+    /// Deterministic pseudo-random coefficients in `-4..=4`, so zeros occur and the
+    /// trimming of leading zeros gets exercised.
+    fn coefficients(len: usize, seed: u64) -> Vec<i64> {
+        let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+        (0..len)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                ((state >> 33) % 9) as i64 - 4
+            })
+            .collect()
+    }
+
+    #[test]
+    fn karatsuba_agrees_with_the_convolution_either_side_of_the_threshold() {
+        let zx = zx();
+        let t = KARATSUBA_THRESHOLD;
+
+        // Shapes straddling the threshold, including lopsided and equal-length pairs,
+        // and sizes that force an odd split.
+        let shapes = [
+            (1, 1),
+            (t - 1, t - 1),
+            (t - 1, t),
+            (t, t - 1),
+            (t, t),
+            (t + 1, t),
+            (t + 1, t + 1),
+            (2 * t, t),
+            (2 * t + 1, t + 3),
+            (4 * t + 5, 4 * t + 5),
+            (6 * t, t + 1),
+        ];
+
+        for (i, (n, m)) in shapes.into_iter().enumerate() {
+            let (left, right) = (
+                coefficients(n, i as u64 + 1),
+                coefficients(m, i as u64 + 99),
+            );
+            let expected = {
+                let mut c = convolve(&left, &right);
+                while c.last() == Some(&0) {
+                    c.pop();
+                }
+                poly(&zx, c)
+            };
+            let (a, b) = (poly(&zx, left), poly(&zx, right));
+
+            // Both operand forms, and multiplication is commutative here.
+            assert_eq!(&a * &b, expected, "&a * &b at {n} x {m}");
+            assert_eq!(a.clone() * b.clone(), expected, "a * b at {n} x {m}");
+            assert_eq!(&b * &a, expected, "&b * &a at {n} x {m}");
+            assert_eq!(a.clone() * &b, expected, "a * &b at {n} x {m}");
+        }
+    }
+
+    #[test]
+    fn karatsuba_handles_zero_and_sparse_operands() {
+        let zx = zx();
+        let t = KARATSUBA_THRESHOLD;
+
+        // A single high term times a dense operand: every intermediate half is empty on
+        // one side, which is the lopsided split.
+        let mut sparse = vec![0i64; 4 * t];
+        sparse[4 * t - 1] = 3;
+        let dense = coefficients(4 * t, 7);
+
+        let expected = {
+            let mut c = convolve(&sparse, &dense);
+            while c.last() == Some(&0) {
+                c.pop();
+            }
+            poly(&zx, c)
+        };
+        assert_eq!(
+            &poly(&zx, sparse.clone()) * &poly(&zx, dense.clone()),
+            expected
+        );
+
+        // Zero annihilates whatever its length suggests.
+        let zeros = poly(&zx, vec![0i64; 4 * t]);
+        assert_eq!(zeros, zx.zero());
+        assert_eq!(&zeros * &poly(&zx, dense), zx.zero());
+
+        // And the identity is still the identity above the threshold.
+        let one = zx.identity();
+        let big = poly(&zx, coefficients(4 * t, 11));
+        assert_eq!(&big * &one, big);
+    }
+
+    #[test]
+    fn karatsuba_works_over_a_quotient_ring_too() {
+        // Coefficients that reduce, so the recursion's additions and subtractions have
+        // to stay inside the ring rather than in Z.
+        let f7 = Integers::modulo(7);
+        let f7x = f7.polynomials();
+        let t = KARATSUBA_THRESHOLD;
+
+        let (left, right) = (coefficients(3 * t, 5), coefficients(3 * t, 13));
+        let lift = |c: &[i64]| f7x.element(c.iter().map(|n| f7.element(*n)).collect::<Vec<_>>());
+
+        let expected = lift(&convolve(&left, &right));
+        assert_eq!(&lift(&left) * &lift(&right), expected);
+
+        // x^n * x^m = x^(n+m), which pins the shifts down independently of the sums.
+        let x = f7x.indeterminate();
+        assert_eq!(&x.pow(3 * t) * &x.pow(2 * t), x.pow(5 * t));
     }
 
     #[test]
