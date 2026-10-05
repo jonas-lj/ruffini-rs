@@ -9,7 +9,7 @@ use crate::structures::{
 };
 use num_bigint::BigInt;
 use std::fmt;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
 use std::sync::Arc;
 
 /// A matrix over `R`, stored dense in row-major order.
@@ -146,7 +146,7 @@ where
         for i in 0..self.rows {
             let term = self.get(i, 0).clone() * sign.clone() * self.minor(i, 0).determinant();
             total += term;
-            sign = self.ring.zero() - sign;
+            sign = -sign;
         }
         total
     }
@@ -435,6 +435,22 @@ macro_rules! matrix_scalar_mul {
     )+};
 }
 matrix_scalar_mul!(i64, BigInt);
+
+/// Entrywise. The shared `element_neg` macro cannot produce this one: it negates by
+/// subtracting from its structure's zero, and a matrix's `ring` field is the coefficient
+/// ring rather than the ring the matrix itself lives in.
+impl<R> Neg for Matrix<R>
+where
+    R: Ring + Clone,
+    R::E: RingOps,
+{
+    type Output = Matrix<R>;
+    fn neg(self) -> Matrix<R> {
+        Matrix::from_fn(self.ring.clone(), self.rows, self.cols, |i, j| {
+            -self.get(i, j).clone()
+        })
+    }
+}
 
 /// Compound assignment, written directly so it carries no binder.
 macro_rules! matrix_assign_ops {

@@ -217,6 +217,11 @@ scalar_operand_ops!(
     BigInt
 );
 
+element_neg!(
+    Fraction<R>,
+    { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, }
+);
+
 element_pow!(
     Fraction<R>,
     { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, }

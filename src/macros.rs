@@ -126,3 +126,26 @@ macro_rules! element_pow {
         }
     };
 }
+
+/// `-x`, as `zero - x` in the element's own structure.
+///
+/// Spelled out per type rather than blanket: `impl<R: AdditiveGroup> Neg for R::E` puts
+/// an uncovered parameter before the first local type, and is read as overlapping with
+/// every other `Neg` besides.
+///
+/// The element must hold a `ring` field whose handle is the structure the element
+/// belongs to - which rules out `Matrix`, whose field is the coefficient ring.
+macro_rules! element_neg {
+    ($elem:ty, { $($bounds:tt)* }) => {
+        impl<R> ::std::ops::Neg for $elem
+        where
+            $($bounds)*
+        {
+            type Output = $elem;
+            fn neg(self) -> $elem {
+                let zero = $crate::structures::CommutativeMonoid::zero(&self.ring);
+                zero - self
+            }
+        }
+    };
+}

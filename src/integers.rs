@@ -7,7 +7,7 @@ use crate::structures::{
 };
 use derive_more::{Add, Display, From, Into, Mul, Sub};
 use num_bigint::BigInt;
-use std::ops::{AddAssign, MulAssign, SubAssign};
+use std::ops::{AddAssign, MulAssign, Neg, SubAssign};
 use std::sync::Arc;
 
 /// Handle for the set of integers, used to construct [`Integer`] values.
@@ -87,6 +87,13 @@ macro_rules! integer_ref_ops {
     )*};
 }
 integer_ref_ops!(Add, add; Sub, sub; Mul, mul);
+
+impl Neg for Integer {
+    type Output = Integer;
+    fn neg(self) -> Integer {
+        Integer(-self.0)
+    }
+}
 
 impl DivRem for Integer {
     fn div_rem(&self, divisor: &Self) -> (Self, Self) {

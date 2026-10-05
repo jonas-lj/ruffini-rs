@@ -150,6 +150,47 @@ mod tests {
     }
 
     #[test]
+    fn negation_is_the_additive_inverse_in_every_structure() {
+        use crate::matrices::Matrix;
+        use crate::multivariate::Lex;
+
+        let z = Integers::default();
+        assert_eq!(-int(3), int(-3));
+        assert!(z.is_zero(&(int(3) + -int(3))));
+
+        // In a quotient it is the class that is negated: -3 is 4 mod 7.
+        let f7 = Integers::modulo(7);
+        assert_eq!(-f7.element(3), f7.element(4));
+        assert!(f7.is_zero(&(f7.element(3) + -f7.element(3))));
+
+        // Polynomials, where it replaces a hand-built vector of negated coefficients.
+        let zx = z.polynomials();
+        let x = zx.indeterminate();
+        assert_eq!(-(x.pow(2) - 1), 1 - x.pow(2));
+        assert!(zx.is_zero(&(x.pow(2) + -x.pow(2))));
+
+        // And `constant` lifts a coefficient, which no operator can.
+        assert_eq!(zx.constant(int(-5)), -zx.constant(int(5)));
+        assert_eq!(x.clone() - zx.constant(int(2)), zx.element(vec![int(-2), int(1)]));
+
+        // Matrices negate entrywise, since their `ring` field is the coefficient ring.
+        let m = Matrix::new(z.clone(), 2, 2, vec![int(1), int(-2), int(3), int(0)]);
+        let negated = Matrix::new(z.clone(), 2, 2, vec![int(-1), int(2), int(-3), int(0)]);
+        assert_eq!(-m.clone(), negated);
+        assert_eq!(-m.clone(), -1 * m);
+
+        let q = Integers::rationals();
+        assert_eq!(-q.fraction(1, 2), q.fraction(-1, 2));
+        assert!(q.is_zero(&(q.fraction(1, 2) + -q.fraction(1, 2))));
+
+        let r = z.multi_polynomials(2);
+        let (a, b) = (r.variable(0), r.variable(1));
+        assert_eq!(-(a.clone() - b.clone()), b.clone() - a.clone());
+        assert!(r.is_zero(&(a.clone() + -a.clone())));
+        assert_eq!((-a.clone()).lead(&Lex).unwrap().1, &int(-1));
+    }
+
+    #[test]
     fn is_zero_recognises_the_additive_identity() {
         let z = Integers::default();
         assert!(z.is_zero(&z.zero()));
@@ -490,7 +531,7 @@ mod tests {
         use crate::structures::{
             AdditiveGroup, CommutativeMonoid, Domain, Monoid, Ring, SemiRing, Semigroup,
         };
-        use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+        use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
 
         /// Deliberately implements neither `PartialEq` nor `Eq`.
         #[derive(Clone)]
@@ -506,6 +547,12 @@ mod tests {
             type Output = Self;
             fn sub(self, rhs: Self) -> Self {
                 Opaque(self.0 - rhs.0)
+            }
+        }
+        impl Neg for Opaque {
+            type Output = Self;
+            fn neg(self) -> Self {
+                Opaque(-self.0)
             }
         }
         impl Mul for Opaque {

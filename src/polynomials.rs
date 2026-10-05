@@ -87,6 +87,13 @@ where
         &self.coeff_ring
     }
 
+    /// The constant polynomial `c`, for lifting a coefficient into the ring. An
+    /// operator cannot do this - nothing rules out `R::E` being `Polynomial<R>`, so
+    /// `Polynomial<R>: Sub<R::E>` is read as overlapping with polynomial subtraction.
+    pub fn constant(self: &Arc<Self>, c: R::E) -> Polynomial<R> {
+        self.element(vec![c])
+    }
+
     /// The indeterminate `x`, so polynomials can be written the way they are read:
     /// `x.pow(n) - 1` rather than a padded coefficient vector.
     pub fn indeterminate(self: &Arc<Self>) -> Polynomial<R> {
@@ -204,7 +211,6 @@ where
             Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
-        let zero = self.ring.coeff_ring.zero();
         let result: Vec<R::E> = self
             .coefficients
             .into_iter()
@@ -214,7 +220,7 @@ where
                 EitherOrBoth::Left(x) => x,
                 // Owned Sub cannot take a borrowed-operand bound without RingOps
                 // dragging it through nested polynomials, so zero is replaced per term.
-                EitherOrBoth::Right(y) => zero.clone() - y,
+                EitherOrBoth::Right(y) => -y,
             })
             .collect();
         self.ring.element(result)
@@ -483,6 +489,7 @@ scalar_operand_ops!(
 );
 
 element_pow!(Polynomial<R>, { R: Ring, R::E: RingOps + Eq, });
+element_neg!(Polynomial<R>, { R: Ring, R::E: RingOps + Eq, });
 
 impl<R> fmt::Display for Polynomial<R>
 where

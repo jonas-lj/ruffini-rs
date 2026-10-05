@@ -7,7 +7,7 @@
 
 use num_bigint::{BigInt, Sign};
 use std::fmt;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
 use std::sync::Arc;
 
 /// The ring operations, bundled so the element bound can be written once per `where`
@@ -16,19 +16,26 @@ use std::sync::Arc;
 /// These are supertraits rather than a `where` clause, which is what makes them usable
 /// at the call site: Rust elaborates supertrait bounds, but never a trait's own `where`
 /// clause, so `R::E: RingOps` yields `Add`/`Sub`/`Mul` while `R: Ring` alone does not.
-/// The blanket impl covers every element type that already has the three operators.
+/// The blanket impl covers every element type that already has the operators. `Neg` is
+/// among them: `Sub` is here too, so additive inverses are assumed regardless.
 pub trait RingOps:
     Sized
     + Add<Output = Self>
     + AddAssign
     + Sub<Output = Self>
+    + Neg<Output = Self>
     + Mul<Output = Self>
     + MulAssign
 {
 }
 
 impl<T> RingOps for T where
-    T: Add<Output = T> + AddAssign + Sub<Output = T> + Mul<Output = T> + MulAssign
+    T: Add<Output = T>
+        + AddAssign
+        + Sub<Output = T>
+        + Neg<Output = T>
+        + Mul<Output = T>
+        + MulAssign
 {
 }
 
@@ -137,7 +144,7 @@ where
             }
         }
         match sign {
-            Sign::Minus => self.zero() - result,
+            Sign::Minus => -result,
             _ => result,
         }
     }
@@ -360,6 +367,11 @@ scalar_operand_ops!(
     { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, },
     i64,
     BigInt
+);
+
+element_neg!(
+    QuotientRingElement<R>,
+    { R: EuclideanDomain, R::E: RingOps + DivRem + Eq, }
 );
 
 element_pow!(
