@@ -3,8 +3,55 @@
 Algebraic structures over arbitrary-precision integers, written so that an algorithm
 reads the way the mathematics does.
 
-Rings, fields, polynomials in one or many variables, matrices, elliptic curves and
-constructive reals, each generic over the others.
+## What's in it
+
+Each structure is generic over the others, so they stack: `F_p`, `F_p[x]`, `F_p[x][y]`,
+matrices over `Q(x)`, multivariate polynomials over a quotient ring.
+
+### Structures
+
+- **`Integers`** — `Z` over `BigInt`, a Euclidean domain.
+- **`QuotientRing`** — `ring.quotient(m)` is `R/(m)`, and `Integers::modulo(7)` is `F_7`.
+- **`FractionField`** — `ring.fractions()` is the field of fractions, so
+  `Integers::rationals()` is `Q` and `f.polynomials().fractions()` is `F(x)`.
+- **`PolynomialRing`** — `ring.polynomials()` is `R[x]`, stored densely, itself a
+  Euclidean domain when `R` is a field.
+- **`MultivariatePolynomialRing`** — `ring.multi_polynomials(3)` is
+  `R[x_0, x_1, x_2]`, stored sparsely, with the variable count a run-time value.
+- **`MatrixRing`** — `ring.matrices(n)` is the `n x n` matrices over `R`, itself a ring;
+  `Matrix` on its own is any shape.
+- **`Curve`** — elliptic curves `y² = x³ + ax + b` over any field, whose points form an
+  additive group.
+- **`ConstructiveReals`** — computable reals, held as expression trees and evaluated to
+  whatever precision is asked of them.
+
+### Algorithms
+
+- **Gröbner bases** — `gröbner::gröbner_basis`, Buchberger with both of his criteria,
+  under any `MonomialOrder` (`Lex`, `GradedLex`), returning the reduced basis.
+- **Division** — Euclidean for polynomials over a field, `div_rem_monic` by a monic
+  divisor over any ring, and `MultivariatePolynomial::divide` by several divisors at once.
+- **Extended gcd** — `euclidean::extended_gcd` over any Euclidean domain, canonicalised:
+  positive over `Z`, monic over `F[x]`.
+- **Interpolation** — `interpolation::interpolate`, or `Interpolation::new` to reuse the
+  Lagrange basis across several sets of values.
+- **Determinant and inverse** — cofactor expansion over any ring, Gauss-Jordan over a
+  field.
+- **Fast Fourier transform** — `fft::fft` and `inverse_fft`, radix-2 over any ring that
+  has a root of unity.
+- **Exponentiation** — `x.pow(n)` by square-and-multiply, the exponent any integer type
+  up to `BigInt`.
+- **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
+  multiplication by double-and-add.
+
+### Notation
+
+- Operators on elements, in every combination of owned and borrowed operands: `a + b`,
+  `&a * &b`, `a - &b`, and `+=` / `*=`.
+- Plain integers on either side of an operator: `2 * x`, `x - 1`.
+- Polynomials built from their indeterminate: `let x = ring.indeterminate();` and then
+  `x.pow(7) - 1`.
+- Elements are `Send` and `Sync` whenever their coefficients are.
 
 ## Finite fields
 
