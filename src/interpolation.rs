@@ -20,7 +20,7 @@ where
     )
 }
 
-/// Interpolation at a fixed set of nodes, keeping the Lagrange basis for reuse.
+/// Interpolation at a fixed set of x values, keeping the Lagrange basis for reuse.
 // The basis depends only on the x values, so each later call is a linear combination
 // rather than k^2 further polynomial products.
 pub struct Interpolation<R>
@@ -29,7 +29,7 @@ where
     R::E: RingOps + Eq,
 {
     ring: Arc<PolynomialRing<R>>,
-    /// `basis[j]` is 1 at `x[j]` and 0 at every other node.
+    /// `basis[j]` is 1 at `xs[j]` and 0 at every other x value.
     basis: Vec<Polynomial<R>>,
 }
 
@@ -38,32 +38,26 @@ where
     R: Field + Clone,
     R::E: RingOps + Eq,
 {
-    /// Builds the Lagrange basis for `nodes`, or [`None`] if two of them coincide.
-    pub fn new(ring: &Arc<PolynomialRing<R>>, nodes: &[R::E]) -> Option<Self> {
+    /// Builds the Lagrange basis for `xs`, or [`None`] if two of them coincide.
+    pub fn new(ring: &Arc<PolynomialRing<R>>, xs: &[R::E]) -> Option<Self> {
         let field = ring.coefficients().clone();
         let x = ring.indeterminate();
-        // The nodes as constant polynomials, so the factors below read as the formula
-        // does. Lifted once rather than inside the loop, which would build k^2 of them.
-        let lifted: Vec<Polynomial<R>> =
-            nodes.iter().map(|x_m| ring.constant(x_m.clone())).collect();
+        let lifted: Vec<Polynomial<R>> = xs.iter().map(|x_m| ring.constant(x_m.clone())).collect();
 
-        let basis = (0..nodes.len())
+        let basis = (0..xs.len())
             .map(|j| {
                 // l_j = prod_{m != j} (x - x_m) / (x_j - x_m). Starting the product from
                 // the scalar folds the division in, avoiding a second pass.
                 let mut denominator = field.identity();
-                for (m, x_m) in nodes.iter().enumerate() {
+                for (m, x_m) in xs.iter().enumerate() {
                     if m != j {
-                        denominator *= nodes[j].clone() - x_m.clone();
+                        denominator *= xs[j].clone() - x_m.clone();
                     }
                 }
 
                 let mut l = ring.constant(field.invert(&denominator)?);
                 for (m, x_m) in lifted.iter().enumerate() {
                     if m != j {
-                        // Owned operands: the borrowed `Sub` wants
-                        // `for<'c> &'c R::E: Sub<&'c R::E>`, which is the bound that
-                        // overflows through `Matrix`.
                         l *= x.clone() - x_m.clone();
                     }
                 }
@@ -76,18 +70,19 @@ where
         })
     }
 
-    /// How many nodes this was built for.
-    pub fn nodes(&self) -> usize {
+    /// How many x values this was built for, which bounds the interpolant's degree.
+    pub fn len(&self) -> usize {
         self.basis.len()
     }
 
-    /// The polynomial taking `values[j]` at node `j`. Panics on a wrong value count.
+    /// Whether this was built for no x values at all.
+    pub fn is_empty(&self) -> bool {
+        self.basis.is_empty()
+    }
+
+    /// The polynomial taking `values[j]` at `xs[j]`. Panics on a wrong value count.
     pub fn apply(&self, values: &[R::E]) -> Polynomial<R> {
-        assert_eq!(
-            values.len(),
-            self.basis.len(),
-            "expected one value per node"
-        );
+        assert_eq!(values.len(), self.basis.len(), "expected one value per x");
         self.basis
             .iter()
             .zip(values)
@@ -97,19 +92,19 @@ where
     }
 }
 
-/// The lowest-degree polynomial with `p(x[i]) == y[i]`, or [`None`] if two x values
+/// The lowest-degree polynomial with `p(xs[i]) == ys[i]`, or [`None`] if two x values
 /// coincide. See [`Interpolation`] to reuse the basis; panics on mismatched lengths.
 pub fn interpolate<R>(
     ring: &Arc<PolynomialRing<R>>,
-    x: &[R::E],
-    y: &[R::E],
+    xs: &[R::E],
+    ys: &[R::E],
 ) -> Option<Polynomial<R>>
 where
     R: Field + Clone,
     R::E: RingOps + Eq,
 {
-    assert_eq!(x.len(), y.len(), "x and y must have the same length");
-    Some(Interpolation::new(ring, x)?.apply(y))
+    assert_eq!(xs.len(), ys.len(), "xs and ys must have the same length");
+    Some(Interpolation::new(ring, xs)?.apply(ys))
 }
 
 #[cfg(test)]
@@ -119,7 +114,7 @@ mod tests {
     use crate::polynomials::RingExt;
     use crate::structures::QuotientRing;
 
-    /// F_101, with room for several distinct nodes.
+    /// F_101, with room for several distinct x values.
     fn field() -> Arc<QuotientRing<Integers>> {
         Integers::modulo(101)
     }
@@ -129,12 +124,12 @@ mod tests {
         let f = field();
         let ring = f.polynomials();
 
-        // p = 3 + 2x + 5x^3, sampled at five nodes.
+        // p = 3 + 2x + 5x^3, sampled at five x values.
         let p = ring.element(vec![f.element(3), f.element(2), f.element(0), f.element(5)]);
         let x: Vec<_> = (1..=5i64).map(|n| f.element(n)).collect();
         let y: Vec<_> = x.iter().map(|xi| p.evaluate(xi)).collect();
 
-        let q = interpolate(&ring, &x, &y).expect("nodes are distinct");
+        let q = interpolate(&ring, &x, &y).expect("the x values are distinct");
         assert_eq!(q, p);
         // Degree is at most one less than the node count, and here matches p exactly.
         assert_eq!(q.degree(), Some(3));
@@ -151,7 +146,7 @@ mod tests {
         for (xi, yi) in x.iter().zip(&y) {
             assert_eq!(&p.evaluate(xi), yi);
         }
-        // Four nodes, so degree at most three.
+        // Four x values, so degree at most three.
         assert!(p.degree().unwrap() <= 3);
 
         // A single point gives the constant.
@@ -161,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_nodes_have_no_interpolant() {
+    fn a_repeated_x_value_has_no_interpolant() {
         let f = field();
         let ring = f.polynomials();
         let x = vec![f.element(4), f.element(9), f.element(4)];
@@ -176,7 +171,7 @@ mod tests {
         let ring = f.polynomials();
         let x: Vec<_> = (1..=4i64).map(|n| f.element(n)).collect();
         let interpolation = Interpolation::new(&ring, &x).unwrap();
-        assert_eq!(interpolation.nodes(), 4);
+        assert_eq!(interpolation.len(), 4);
 
         for values in [vec![1i64, 0, 0, 0], vec![0, 1, 0, 0], vec![7, 7, 7, 7]] {
             let y: Vec<_> = values.iter().map(|n| f.element(*n)).collect();
@@ -195,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "one value per node")]
+    #[should_panic(expected = "one value per x")]
     fn rejects_a_mismatched_value_count() {
         let f = field();
         let ring = f.polynomials();
