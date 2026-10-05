@@ -41,6 +41,8 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   has a root of unity.
 - **Exponentiation** — `x.pow(n)` by square-and-multiply, the exponent any integer type
   up to `BigInt`.
+- **Number theory** — `number_theory::factorise`, `totient` and `multiplicative_order`,
+  by trial division, sized for the small moduli that turn up as parameters.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
 
