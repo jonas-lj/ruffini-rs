@@ -31,6 +31,7 @@ pub mod integers;
 pub mod interpolation;
 pub mod matrices;
 pub mod multivariate;
+pub mod number_theory;
 pub mod polynomials;
 pub mod pow;
 pub mod structures;
