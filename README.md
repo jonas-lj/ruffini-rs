@@ -14,6 +14,8 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **`QuotientRing`** — `ring.quotient(m)` is `R/(m)`, and `Integers::modulo(7)` is `F_7`.
 - **`FractionField`** — `ring.fractions()` is the field of fractions, so
   `Integers::rationals()` is `Q` and `f.polynomials().fractions()` is `F(x)`.
+- **`finite_field(p, k)`** — `F_{p^k}`, as `F_p[x]` modulo an irreducible polynomial
+  found for you, with a table fixing the common `p` and `k`.
 - **`PolynomialRing`** — `ring.polynomials()` is `R[x]`, stored densely, itself a
   Euclidean domain when `R` is a field.
 - **`MultivariatePolynomialRing`** — `ring.multi_polynomials(3)` is
@@ -64,6 +66,25 @@ use ruffini::structures::{Field, Monoid};
 let f7 = Integers::modulo(7);
 
 assert_eq!(f7.inverse(3).unwrap() * 3, f7.identity()); // 3 · 3⁻¹ = 1
+```
+
+## Finite fields of prime power order
+
+`F_{p^k}` is `F_p[x]` modulo an irreducible polynomial of degree `k`, which the library
+finds, tests with Rabin's criterion, or looks up for small `p` and `k`.
+
+```rust
+use ruffini::finite_fields::finite_field;
+use ruffini::structures::{Domain, Field, Monoid};
+
+let f9 = finite_field(3, 2); // F_9 = F_3[x]/(x^2 + 1)
+let ring = f9.base();        // F_3[x], to build elements with
+
+let i = f9.element(ring.indeterminate()); // x, a square root of -1
+assert_eq!(i.pow(2), -f9.identity());
+assert_eq!(i.pow(8), f9.identity());      // every nonzero a has a^(9-1) = 1
+
+assert_eq!(&i * &f9.invert(&i).unwrap(), f9.identity());
 ```
 
 ## Polynomials
