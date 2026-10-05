@@ -77,20 +77,19 @@ fn aks(n: &BigInt) -> bool {
     let znx = zn.polynomials();
     let ring = znx.quotient(cyclotomic_modulus(&znx, r as usize));
 
-    // x^n, computed once and reused for every witness. The exponent is `n` again,
-    // owned, from the ring that already holds it as its modulus.
+    // x^n, computed once and reused for every witness.
     let x = ring.element(znx.indeterminate());
-    let x_to_n = x.pow(zn.order());
+    let x_to_n = x.pow(n.clone());
 
     // (x + a)^n == x^n + a must hold for every a below sqrt(phi(r)) * log2(n).
     let phi = totient(r).to_u64().expect("r is a machine integer");
     let limit = (phi.isqrt() * log2 as u64).max(1);
-    (1..limit).all(|a| witness_agrees(&zn, &x, &x_to_n, a as i64))
+    (1..limit).all(|a| witness_agrees(n, &x, &x_to_n, a as i64))
 }
 
 /// Whether `(x + a)^n` and `x^n + a` agree in the ring.
-fn witness_agrees(zn: &Zn, x: &Residue, x_to_n: &Residue, a: i64) -> bool {
-    (x + a).pow(zn.order()) == x_to_n + a
+fn witness_agrees(n: &BigInt, x: &Residue, x_to_n: &Residue, a: i64) -> bool {
+    (x + a).pow(n.clone()) == x_to_n + a
 }
 
 /// `x^r - 1` over `Z_n`.
