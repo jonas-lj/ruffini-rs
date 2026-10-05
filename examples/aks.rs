@@ -11,11 +11,11 @@ use num_traits::{One, Zero};
 use ruffini::integers::Integers;
 use ruffini::polynomials::{Polynomial, RingExt};
 use ruffini::structures::{Domain, EuclideanDomain, QuotientRing};
-use std::rc::Rc;
+use std::sync::Arc;
 
-type Zn = Rc<QuotientRing<Integers>>;
-type ZnX = Rc<ruffini::polynomials::PolynomialRing<Zn>>;
-type Cyclotomic = Rc<QuotientRing<ZnX>>;
+type Zn = Arc<QuotientRing<Integers>>;
+type ZnX = Arc<ruffini::polynomials::PolynomialRing<Zn>>;
+type Cyclotomic = Arc<QuotientRing<ZnX>>;
 
 fn main() {
     let args: Vec<BigInt> = std::env::args()

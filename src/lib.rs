@@ -5,8 +5,8 @@
 //! → [`EuclideanDomain`](structures::EuclideanDomain) → [`Field`](structures::Field))
 //! along with concrete implementations: the [integers], generic
 //! [`QuotientRing`](structures::QuotientRing) and [`Polynomial`](polynomials::Polynomial)
-//! constructions. A finite prime field `F_p` is just `Rc<QuotientRing<Integers>>`
-//! with a prime modulus. `F_p[x]` is then `Rc<PolynomialRing<Rc<QuotientRing<Integers>>>>`.
+//! constructions. A finite prime field `F_p` is just `Arc<QuotientRing<Integers>>`
+//! with a prime modulus. `F_p[x]` is then `Arc<PolynomialRing<Arc<QuotientRing<Integers>>>>`.
 //!
 //! [`Domain::E`](structures::Domain::E) does not require `Eq`. Only
 //! [`EuclideanDomain`](structures::EuclideanDomain) and [`Field`](structures::Field) do.
@@ -101,6 +101,51 @@ mod tests {
         assert_eq!(2 + three.clone(), f7.element(5));
         assert_eq!(1 - three.clone(), f7.element(5));
         assert_eq!(three.clone() - 1, f7.element(2));
+    }
+
+    #[test]
+    fn structures_and_their_elements_cross_thread_boundaries() {
+        use crate::elliptic::{Curve, Point};
+        use crate::matrices::{Matrix, MatrixRing};
+        use crate::multivariate::{MultivariatePolynomial, MultivariatePolynomialRing};
+        use crate::polynomials::{Polynomial, PolynomialRing};
+        use crate::structures::{QuotientRing, QuotientRingElement};
+        use std::sync::Arc;
+
+        fn send_sync<T: Send + Sync>() {}
+
+        send_sync::<Integer>();
+        send_sync::<Integers>();
+        type F7 = Arc<QuotientRing<Integers>>;
+        send_sync::<F7>();
+        send_sync::<QuotientRingElement<Integers>>();
+        send_sync::<Arc<PolynomialRing<Integers>>>();
+        send_sync::<Polynomial<Integers>>();
+        // Nested: F_7[x][y].
+        send_sync::<Polynomial<Arc<PolynomialRing<F7>>>>();
+        send_sync::<Arc<MatrixRing<Integers>>>();
+        send_sync::<Matrix<Integers>>();
+        send_sync::<Arc<MultivariatePolynomialRing<F7>>>();
+        send_sync::<MultivariatePolynomial<F7>>();
+        send_sync::<Arc<Curve<F7>>>();
+        send_sync::<Point<F7>>();
+
+        // And actually moved, since a bound can be satisfied vacuously.
+        let f7 = Integers::modulo(7);
+        let f7x = f7.polynomials();
+        let p = f7x.element(vec![f7.element(1), f7.element(2), f7.element(3)]);
+        let squares: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..3)
+                .map(|i| {
+                    let (p, f7) = (p.clone(), f7.clone());
+                    scope.spawn(move || p.evaluate(&f7.element(i)))
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        // 1 + 2x + 3x^2 at x = 0, 1, 2: 1, 6, 17 = 3 (mod 7).
+        assert_eq!(squares, vec![f7.element(1), f7.element(6), f7.element(3)]);
     }
 
     #[test]

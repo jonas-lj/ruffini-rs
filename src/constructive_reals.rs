@@ -19,6 +19,14 @@ use std::rc::Rc;
 const UNKNOWN_MSD: i32 = i32::MIN;
 
 /// A constructive real. Cheap to clone: a refcounted handle onto a shared node.
+///
+/// [`Rc`], not [`Arc`](std::sync::Arc) as the algebraic structures use: a node memoises
+/// its best approximation in a [`RefCell`], so sharing one across threads would need a
+/// lock on every node and every read. Values here stay on one thread.
+///
+/// The structures remain usable from several threads: [`Send`] is conditional on the
+/// coefficient type, so `Polynomial<ConstructiveReals>` is simply not one of the
+/// composites that crosses a thread boundary.
 #[derive(Clone)]
 pub struct ConstructiveReal(Rc<Node>);
 

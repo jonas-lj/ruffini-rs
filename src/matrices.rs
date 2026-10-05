@@ -10,7 +10,7 @@ use crate::structures::{
 use num_bigint::BigInt;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// A matrix over `R`, stored dense in row-major order.
 #[derive(Debug)]
@@ -218,8 +218,8 @@ where
     R::E: RingOps,
 {
     /// The ring of `n × n` matrices over `base`.
-    pub fn new(base: R, dimension: usize) -> Rc<Self> {
-        Rc::new(MatrixRing { base, dimension })
+    pub fn new(base: R, dimension: usize) -> Arc<Self> {
+        Arc::new(MatrixRing { base, dimension })
     }
 
     /// The ring the entries live in.
@@ -459,7 +459,7 @@ macro_rules! matrix_assign_ops {
 }
 matrix_assign_ops!(AddAssign, add_assign, add; MulAssign, mul_assign, mul);
 
-impl<R> Domain for Rc<MatrixRing<R>>
+impl<R> Domain for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
@@ -481,14 +481,14 @@ where
     }
 }
 
-impl<R> Semigroup for Rc<MatrixRing<R>>
+impl<R> Semigroup for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> Monoid for Rc<MatrixRing<R>>
+impl<R> Monoid for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
@@ -505,7 +505,7 @@ where
     }
 }
 
-impl<R> CommutativeMonoid for Rc<MatrixRing<R>>
+impl<R> CommutativeMonoid for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
@@ -528,21 +528,21 @@ where
     }
 }
 
-impl<R> AdditiveGroup for Rc<MatrixRing<R>>
+impl<R> AdditiveGroup for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> SemiRing for Rc<MatrixRing<R>>
+impl<R> SemiRing for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> Ring for Rc<MatrixRing<R>>
+impl<R> Ring for Arc<MatrixRing<R>>
 where
     R: Ring + Clone,
     R::E: RingOps + Eq,
@@ -583,7 +583,7 @@ mod tests {
         Integer::from(n)
     }
 
-    fn zm(n: usize) -> Rc<MatrixRing<Integers>> {
+    fn zm(n: usize) -> Arc<MatrixRing<Integers>> {
         Integers::default().matrices(n)
     }
 

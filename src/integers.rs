@@ -7,7 +7,7 @@ use crate::structures::{
 use derive_more::{Add, Display, From, Into, Mul, Sub};
 use num_bigint::BigInt;
 use std::ops::{AddAssign, MulAssign, SubAssign};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Handle for the set of integers, used to construct [`Integer`] values.
 #[derive(Default, Clone, Debug)]
@@ -22,7 +22,7 @@ pub struct Integer(BigInt);
 impl Integers {
     /// The ring of integers modulo `modulus`, e.g. `Integers::modulo(7)`. A prime
     /// modulus gives the finite field `F_p`.
-    pub fn modulo(modulus: impl Into<Integer>) -> Rc<QuotientRing<Integers>> {
+    pub fn modulo(modulus: impl Into<Integer>) -> Arc<QuotientRing<Integers>> {
         Integers::default().quotient(modulus.into())
     }
 }
