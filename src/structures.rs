@@ -257,6 +257,11 @@ where
         Arc::new(QuotientRing { ring, modulus })
     }
 
+    /// The ring this is a quotient of, which is where representatives come from.
+    pub fn base(&self) -> &R {
+        &self.ring
+    }
+
     /// The modulus generating the ideal `(modulus)` that this quotient is taken by.
     pub fn modulus(&self) -> &R::E {
         &self.modulus
@@ -272,6 +277,20 @@ where
     /// quotient rather than one of the ring underneath it.
     fn represents_zero(&self, a: &R::E) -> bool {
         a.div_rem(&self.modulus).1 == self.ring.zero()
+    }
+}
+
+impl<R> QuotientRingElement<R>
+where
+    R: EuclideanDomain,
+    R::E: RingOps + DivRem + Eq,
+{
+    /// The representative this class is carrying, as an element of the ring underneath.
+    ///
+    /// Reduced, but not canonical: two representatives of one class need not be equal
+    /// as elements of `R`, only congruent. Compare classes, not representatives.
+    pub fn representative(&self) -> &R::E {
+        &self.value
     }
 }
 
