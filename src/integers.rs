@@ -1,5 +1,6 @@
 //! The integers (`Z`) as a [`EuclideanDomain`] over [`BigInt`].
 
+use crate::fractions::FractionField;
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Monoid, QuotientRing, Ring,
     SemiRing, Semigroup, Domain,
@@ -24,6 +25,11 @@ impl Integers {
     /// modulus gives the finite field `F_p`.
     pub fn modulo(modulus: impl Into<Integer>) -> Arc<QuotientRing<Integers>> {
         Integers::default().quotient(modulus.into())
+    }
+
+    /// The rationals `Q`, the field of fractions of `Z`.
+    pub fn rationals() -> Arc<FractionField<Integers>> {
+        Integers::default().fractions()
     }
 }
 
