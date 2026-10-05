@@ -2,12 +2,12 @@
 
 use crate::polynomials::{Polynomial, PolynomialRing};
 use crate::structures::{CommutativeMonoid, Domain, Field, RingOps};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Multiplies every coefficient by `c`.
 // Both clones are forced: the basis is reused, so its coefficients cannot move out,
 // and the borrowed Mul needs an HRTB that overflows through Matrix.
-fn scale<R>(ring: &Rc<PolynomialRing<R>>, p: &Polynomial<R>, c: &R::E) -> Polynomial<R>
+fn scale<R>(ring: &Arc<PolynomialRing<R>>, p: &Polynomial<R>, c: &R::E) -> Polynomial<R>
 where
     R: Field + Clone,
     R::E: RingOps + Eq,
@@ -28,7 +28,7 @@ where
     R: Field + Clone,
     R::E: RingOps + Eq,
 {
-    ring: Rc<PolynomialRing<R>>,
+    ring: Arc<PolynomialRing<R>>,
     /// `basis[j]` is 1 at `x[j]` and 0 at every other node.
     basis: Vec<Polynomial<R>>,
 }
@@ -39,7 +39,7 @@ where
     R::E: RingOps + Eq,
 {
     /// Builds the Lagrange basis for `nodes`, or [`None`] if two of them coincide.
-    pub fn new(ring: &Rc<PolynomialRing<R>>, nodes: &[R::E]) -> Option<Self> {
+    pub fn new(ring: &Arc<PolynomialRing<R>>, nodes: &[R::E]) -> Option<Self> {
         let field = ring.coefficients().clone();
         let basis = (0..nodes.len())
             .map(|j| {
@@ -61,7 +61,7 @@ where
             })
             .collect::<Option<Vec<_>>>()?;
         Some(Interpolation {
-            ring: Rc::clone(ring),
+            ring: Arc::clone(ring),
             basis,
         })
     }
@@ -90,7 +90,7 @@ where
 /// The lowest-degree polynomial with `p(x[i]) == y[i]`, or [`None`] if two x values
 /// coincide. See [`Interpolation`] to reuse the basis; panics on mismatched lengths.
 pub fn interpolate<R>(
-    ring: &Rc<PolynomialRing<R>>,
+    ring: &Arc<PolynomialRing<R>>,
     x: &[R::E],
     y: &[R::E],
 ) -> Option<Polynomial<R>>
@@ -110,7 +110,7 @@ mod tests {
     use crate::structures::QuotientRing;
 
     /// F_101, with room for several distinct nodes.
-    fn field() -> Rc<QuotientRing<Integers>> {
+    fn field() -> Arc<QuotientRing<Integers>> {
         Integers::modulo(101)
     }
 

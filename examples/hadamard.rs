@@ -13,10 +13,10 @@ use ruffini::integers::{Integer, Integers};
 use ruffini::matrices::{Matrix, MatrixRing};
 use ruffini::polynomials::{Polynomial, PolynomialRing, RingExt};
 use ruffini::structures::{CommutativeMonoid, Domain, Monoid, Ring};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Instant;
 
-type Zx = Rc<PolynomialRing<Integers>>;
+type Zx = Arc<PolynomialRing<Integers>>;
 type Zp = Polynomial<Integers>;
 
 /// The group ring `Z[x]/(x^n - 1)`: polynomials reduced modulo a monic divisor, which
@@ -238,7 +238,7 @@ fn finish(group: &GroupRing, b: &[Zp], n: usize, order: usize) {
 }
 
 /// Evaluates a polynomial with integer coefficients at a matrix, by Horner.
-fn apply(p: &Zp, u: &Matrix<Integers>, ring: &Rc<MatrixRing<Integers>>) -> Matrix<Integers> {
+fn apply(p: &Zp, u: &Matrix<Integers>, ring: &Arc<MatrixRing<Integers>>) -> Matrix<Integers> {
     // The constant term of each step is `c * I`, which `scale` reaches directly -
     // an operator cannot, since the coefficient is a ring element.
     p.coefficients().iter().rev().fold(ring.zero(), |acc, c| {

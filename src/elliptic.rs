@@ -10,7 +10,7 @@ use std::ops::MulAssign;
 use num_bigint::{BigInt, Sign};
 use std::fmt;
 use std::ops::{Add, AddAssign, Neg, Sub};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// A point on a curve, or the point at infinity.
 #[derive(Debug)]
@@ -21,7 +21,7 @@ where
 {
     /// `None` is the point at infinity.
     coordinates: Option<(F::E, F::E)>,
-    curve: Rc<Curve<F>>,
+    curve: Arc<Curve<F>>,
 }
 
 /// The curve `y^2 = x^3 + ax + b` over a field.
@@ -42,12 +42,12 @@ where
     F::E: RingOps + Eq,
 {
     /// The curve `y^2 = x^3 + ax + b`, or [`None`] if it is singular.
-    pub fn new(field: F, a: F::E, b: F::E) -> Option<Rc<Self>>
+    pub fn new(field: F, a: F::E, b: F::E) -> Option<Arc<Self>>
     where
         F::E: for<'x> MulAssign<&'x F::E>,
     {
         let curve = Curve { field, a, b };
-        (!curve.field.is_zero(&curve.discriminant())).then(|| Rc::new(curve))
+        (!curve.field.is_zero(&curve.discriminant())).then(|| Arc::new(curve))
     }
 
     /// `-16(4a^3 + 27b^2)`, zero exactly when the curve is singular.
@@ -78,23 +78,23 @@ where
     }
 
     /// The point `(x, y)`, or [`None`] if it is not on the curve.
-    pub fn point(self: &Rc<Self>, x: F::E, y: F::E) -> Option<Point<F>> {
+    pub fn point(self: &Arc<Self>, x: F::E, y: F::E) -> Option<Point<F>> {
         self.contains(&x, &y).then(|| Point {
             coordinates: Some((x, y)),
-            curve: Rc::clone(self),
+            curve: Arc::clone(self),
         })
     }
 
     /// The point at infinity, which is the group's identity.
-    pub fn infinity(self: &Rc<Self>) -> Point<F> {
+    pub fn infinity(self: &Arc<Self>) -> Point<F> {
         Point {
             coordinates: None,
-            curve: Rc::clone(self),
+            curve: Arc::clone(self),
         }
     }
 
     /// `n * p`, by double-and-add. Negative `n` multiplies the negation.
-    pub fn multiply<T: Into<BigInt>>(self: &Rc<Self>, n: T, p: &Point<F>) -> Point<F> {
+    pub fn multiply<T: Into<BigInt>>(self: &Arc<Self>, n: T, p: &Point<F>) -> Point<F> {
         let (sign, magnitude) = n.into().into_parts();
         let mut result = self.infinity();
         let mut addend = p.clone();
@@ -129,7 +129,7 @@ where
     }
 
     /// The curve this point lies on.
-    pub fn curve(&self) -> &Rc<Curve<F>> {
+    pub fn curve(&self) -> &Arc<Curve<F>> {
         &self.curve
     }
 }
@@ -142,7 +142,7 @@ where
     fn clone(&self) -> Self {
         Point {
             coordinates: self.coordinates.clone(),
-            curve: Rc::clone(&self.curve),
+            curve: Arc::clone(&self.curve),
         }
     }
 }
@@ -154,7 +154,7 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
-            Rc::ptr_eq(&self.curve, &other.curve),
+            Arc::ptr_eq(&self.curve, &other.curve),
             "points belong to different curves"
         );
         self.coordinates == other.coordinates
@@ -192,10 +192,10 @@ where
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.curve, &rhs.curve),
+            Arc::ptr_eq(&self.curve, &rhs.curve),
             "points belong to different curves"
         );
-        let curve = Rc::clone(&self.curve);
+        let curve = Arc::clone(&self.curve);
         let field = &curve.field;
 
         let (px, py) = match self.coordinates {
@@ -266,7 +266,7 @@ where
     }
 }
 
-impl<F> Domain for Rc<Curve<F>>
+impl<F> Domain for Arc<Curve<F>>
 where
     F: Field + Clone,
     F::E: RingOps + Eq,
@@ -285,7 +285,7 @@ where
     }
 }
 
-impl<F> CommutativeMonoid for Rc<Curve<F>>
+impl<F> CommutativeMonoid for Arc<Curve<F>>
 where
     F: Field + Clone,
     F::E: RingOps + Eq,
@@ -295,7 +295,7 @@ where
     }
 }
 
-impl<F> AdditiveGroup for Rc<Curve<F>>
+impl<F> AdditiveGroup for Arc<Curve<F>>
 where
     F: Field + Clone,
     F::E: RingOps + Eq,
@@ -321,17 +321,17 @@ mod tests {
     use crate::integers::Integers;
     use crate::structures::QuotientRing;
 
-    type Fp = Rc<QuotientRing<Integers>>;
+    type Fp = Arc<QuotientRing<Integers>>;
 
     /// y^2 = x^3 + x + 6 over F_11, a standard worked example.
-    fn curve() -> (Fp, Rc<Curve<Fp>>) {
+    fn curve() -> (Fp, Arc<Curve<Fp>>) {
         let f = Integers::modulo(11);
         let c = Curve::new(f.clone(), f.element(1), f.element(6)).expect("nonsingular");
         (f, c)
     }
 
     /// Every affine point, by brute force over the whole field.
-    fn all_points(f: &Fp, c: &Rc<Curve<Fp>>) -> Vec<Point<Fp>> {
+    fn all_points(f: &Fp, c: &Arc<Curve<Fp>>) -> Vec<Point<Fp>> {
         let mut points = vec![c.infinity()];
         for x in 0..11i64 {
             for y in 0..11i64 {

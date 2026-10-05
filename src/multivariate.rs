@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// The exponents of one monomial, one entry per variable.
 pub type Monomial = Vec<u32>;
@@ -91,7 +91,7 @@ where
     R::E: RingOps + Eq,
 {
     terms: BTreeMap<Monomial, R::E>,
-    ring: Rc<MultivariatePolynomialRing<R>>,
+    ring: Arc<MultivariatePolynomialRing<R>>,
 }
 
 impl<R> MultivariatePolynomialRing<R>
@@ -100,8 +100,8 @@ where
     R::E: RingOps + Eq,
 {
     /// Construct `R[x_0, .., x_{n-1}]`.
-    pub fn new(coeff_ring: R, variables: usize) -> Rc<Self> {
-        Rc::new(MultivariatePolynomialRing {
+    pub fn new(coeff_ring: R, variables: usize) -> Arc<Self> {
+        Arc::new(MultivariatePolynomialRing {
             coeff_ring,
             variables,
         })
@@ -121,7 +121,7 @@ where
     ///
     /// # Panics
     /// If `i` is not below [`Self::variables`].
-    pub fn variable(self: &Rc<Self>, i: usize) -> MultivariatePolynomial<R> {
+    pub fn variable(self: &Arc<Self>, i: usize) -> MultivariatePolynomial<R> {
         assert!(i < self.variables, "no variable x_{i} in {} of them", self.variables);
         let mut exponents = vec![0; self.variables];
         exponents[i] = 1;
@@ -241,7 +241,7 @@ where
     terms.retain(|_, c| *c != zero);
 }
 
-impl<R> Domain for Rc<MultivariatePolynomialRing<R>>
+impl<R> Domain for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -273,7 +273,7 @@ where
         prune(&self.coeff_ring, &mut terms);
         MultivariatePolynomial {
             terms,
-            ring: Rc::clone(self),
+            ring: Arc::clone(self),
         }
     }
 }
@@ -286,7 +286,7 @@ where
     fn clone(&self) -> Self {
         MultivariatePolynomial {
             terms: self.terms.clone(),
-            ring: Rc::clone(&self.ring),
+            ring: Arc::clone(&self.ring),
         }
     }
 }
@@ -298,7 +298,7 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &other.ring),
+            Arc::ptr_eq(&self.ring, &other.ring),
             "MultivariatePolynomial operands belong to different rings"
         );
         self.terms == other.terms
@@ -319,7 +319,7 @@ where
 {
     type Output = Self;
     fn add(mut self, rhs: Self) -> Self::Output {
-        debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+        debug_assert!(Arc::ptr_eq(&self.ring, &rhs.ring), "different rings");
         for (monomial, c) in rhs.terms {
             match self.terms.remove(&monomial) {
                 Some(existing) => {
@@ -342,7 +342,7 @@ where
 {
     type Output = Self;
     fn sub(mut self, rhs: Self) -> Self::Output {
-        debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+        debug_assert!(Arc::ptr_eq(&self.ring, &rhs.ring), "different rings");
         let zero = self.ring.coeff_ring.zero();
         for (monomial, c) in rhs.terms {
             match self.terms.remove(&monomial) {
@@ -366,7 +366,7 @@ where
 {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
-        debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+        debug_assert!(Arc::ptr_eq(&self.ring, &rhs.ring), "different rings");
         let mut terms: BTreeMap<Monomial, R::E> = BTreeMap::new();
         for (a, x) in &self.terms {
             for (b, y) in &rhs.terms {
@@ -386,7 +386,7 @@ where
         prune(&self.ring.coeff_ring, &mut terms);
         MultivariatePolynomial {
             terms,
-            ring: Rc::clone(&self.ring),
+            ring: Arc::clone(&self.ring),
         }
     }
 }
@@ -405,7 +405,7 @@ macro_rules! multivariate_ref_termwise_ops {
         {
             type Output = MultivariatePolynomial<R>;
             fn $method(self, rhs: &MultivariatePolynomial<R>) -> Self::Output {
-                debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+                debug_assert!(Arc::ptr_eq(&self.ring, &rhs.ring), "different rings");
                 let zero = self.ring.coeff_ring.zero();
                 let mut terms = self.terms.clone();
                 for (monomial, c) in &rhs.terms {
@@ -415,7 +415,7 @@ macro_rules! multivariate_ref_termwise_ops {
                 prune(&self.ring.coeff_ring, &mut terms);
                 MultivariatePolynomial {
                     terms,
-                    ring: Rc::clone(&self.ring),
+                    ring: Arc::clone(&self.ring),
                 }
             }
         }
@@ -431,7 +431,7 @@ where
 {
     type Output = MultivariatePolynomial<R>;
     fn mul(self, rhs: &MultivariatePolynomial<R>) -> Self::Output {
-        debug_assert!(Rc::ptr_eq(&self.ring, &rhs.ring), "different rings");
+        debug_assert!(Arc::ptr_eq(&self.ring, &rhs.ring), "different rings");
         let mut terms: BTreeMap<Monomial, R::E> = BTreeMap::new();
         for (a, x) in &self.terms {
             for (b, y) in &rhs.terms {
@@ -450,7 +450,7 @@ where
         prune(&self.ring.coeff_ring, &mut terms);
         MultivariatePolynomial {
             terms,
-            ring: Rc::clone(&self.ring),
+            ring: Arc::clone(&self.ring),
         }
     }
 }
@@ -487,7 +487,7 @@ macro_rules! multivariate_assign_ops {
             fn $method(&mut self, rhs: Self) {
                 let placeholder = MultivariatePolynomial {
                     terms: BTreeMap::new(),
-                    ring: Rc::clone(&self.ring),
+                    ring: Arc::clone(&self.ring),
                 };
                 let lhs = std::mem::replace(self, placeholder);
                 *self = lhs.$base_method(rhs);
@@ -504,7 +504,7 @@ macro_rules! multivariate_assign_ops {
             fn $method(&mut self, rhs: &MultivariatePolynomial<R>) {
                 let placeholder = MultivariatePolynomial {
                     terms: BTreeMap::new(),
-                    ring: Rc::clone(&self.ring),
+                    ring: Arc::clone(&self.ring),
                 };
                 let lhs = std::mem::replace(self, placeholder);
                 *self = lhs.$base_method(rhs.clone());
@@ -516,14 +516,14 @@ multivariate_assign_ops!(AddAssign, add_assign, add; MulAssign, mul_assign, mul)
 
 element_pow!(MultivariatePolynomial<R>, { R: Ring, R::E: RingOps + Eq, });
 
-impl<R> Semigroup for Rc<MultivariatePolynomialRing<R>>
+impl<R> Semigroup for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> Monoid for Rc<MultivariatePolynomialRing<R>>
+impl<R> Monoid for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -533,7 +533,7 @@ where
     }
 }
 
-impl<R> CommutativeMonoid for Rc<MultivariatePolynomialRing<R>>
+impl<R> CommutativeMonoid for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -543,21 +543,21 @@ where
     }
 }
 
-impl<R> AdditiveGroup for Rc<MultivariatePolynomialRing<R>>
+impl<R> AdditiveGroup for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> SemiRing for Rc<MultivariatePolynomialRing<R>>
+impl<R> SemiRing for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> Ring for Rc<MultivariatePolynomialRing<R>>
+impl<R> Ring for Arc<MultivariatePolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -606,7 +606,7 @@ mod tests {
     }
 
     /// `Z[x_0, x_1, x_2]`, the ring from the motivating example.
-    fn zxyz() -> Rc<MultivariatePolynomialRing<Integers>> {
+    fn zxyz() -> Arc<MultivariatePolynomialRing<Integers>> {
         Integers::default().multi_polynomials(3)
     }
 

@@ -8,7 +8,7 @@
 use num_bigint::{BigInt, Sign};
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// The ring operations, bundled so the element bound can be written once per `where`
 /// clause instead of spelled out three times.
@@ -172,7 +172,7 @@ where
     fn unit_inverse(&self, u: &Self::E) -> Self::E;
 
     /// The quotient ring `Self / (modulus)`.
-    fn quotient(&self, modulus: Self::E) -> Rc<QuotientRing<Self>>
+    fn quotient(&self, modulus: Self::E) -> Arc<QuotientRing<Self>>
     where
         Self: Clone + Sized,
     {
@@ -218,7 +218,7 @@ where
     R::E: RingOps + DivRem + Eq,
 {
     value: R::E,
-    ring: Rc<QuotientRing<R>>,
+    ring: Arc<QuotientRing<R>>,
 }
 
 /// The quotient ring `R / (modulus)`, where `R` is a Euclidean domain.
@@ -236,10 +236,10 @@ where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
 {
-    /// Construct `R / (modulus)`, wrapped in an [`Rc`] so that elements can hold a
+    /// Construct `R / (modulus)`, wrapped in an [`Arc`] so that elements can hold a
     /// cheap shared reference back to their containing ring.
-    pub fn new(ring: R, modulus: R::E) -> Rc<Self> {
-        Rc::new(QuotientRing { ring, modulus })
+    pub fn new(ring: R, modulus: R::E) -> Arc<Self> {
+        Arc::new(QuotientRing { ring, modulus })
     }
 
     /// The modulus generating the ideal `(modulus)` that this quotient is taken by.
@@ -268,7 +268,7 @@ where
     fn clone(&self) -> Self {
         QuotientRingElement {
             value: self.value.clone(),
-            ring: Rc::clone(&self.ring),
+            ring: Arc::clone(&self.ring),
         }
     }
 }
@@ -305,7 +305,7 @@ macro_rules! quotient_ring_ops {
             type Output = Self;
             fn $method(self, rhs: Self) -> Self::Output {
                 debug_assert!(
-                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    Arc::ptr_eq(&self.ring, &rhs.ring),
                     "QuotientRingElement operands belong to different quotient rings"
                 );
                 let value = self.ring.reduce(self.value.$method(rhs.value));
@@ -322,11 +322,11 @@ macro_rules! quotient_ring_ops {
             type Output = QuotientRingElement<R>;
             fn $method(self, rhs: &QuotientRingElement<R>) -> Self::Output {
                 debug_assert!(
-                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    Arc::ptr_eq(&self.ring, &rhs.ring),
                     "QuotientRingElement operands belong to different quotient rings"
                 );
                 let value = self.ring.reduce((&self.value).$method(&rhs.value));
-                QuotientRingElement { value, ring: Rc::clone(&self.ring) }
+                QuotientRingElement { value, ring: Arc::clone(&self.ring) }
             }
         }
 
@@ -374,7 +374,7 @@ macro_rules! quotient_ring_assign_ops {
         {
             fn $method(&mut self, rhs: QuotientRingElement<R>) {
                 debug_assert!(
-                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    Arc::ptr_eq(&self.ring, &rhs.ring),
                     "QuotientRingElement operands belong to different quotient rings"
                 );
                 let value = self.ring.reduce(self.value.clone().$base_method(rhs.value));
@@ -391,7 +391,7 @@ macro_rules! quotient_ring_assign_ops {
         {
             fn $method(&mut self, rhs: &QuotientRingElement<R>) {
                 debug_assert!(
-                    Rc::ptr_eq(&self.ring, &rhs.ring),
+                    Arc::ptr_eq(&self.ring, &rhs.ring),
                     "QuotientRingElement operands belong to different quotient rings"
                 );
                 let value = self.ring.reduce((&self.value).$base_method(&rhs.value));
@@ -414,7 +414,7 @@ where
     }
 }
 
-impl<R> Domain for Rc<QuotientRing<R>>
+impl<R> Domain for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
@@ -426,19 +426,19 @@ where
     fn element<T: Into<R::E>>(&self, value: T) -> Self::E {
         QuotientRingElement {
             value: self.reduce(value.into()),
-            ring: Rc::clone(self),
+            ring: Arc::clone(self),
         }
     }
 }
 
-impl<R> Semigroup for Rc<QuotientRing<R>>
+impl<R> Semigroup for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
 {
 }
 
-impl<R> Monoid for Rc<QuotientRing<R>>
+impl<R> Monoid for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
@@ -448,7 +448,7 @@ where
     }
 }
 
-impl<R> CommutativeMonoid for Rc<QuotientRing<R>>
+impl<R> CommutativeMonoid for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
@@ -458,21 +458,21 @@ where
     }
 }
 
-impl<R> AdditiveGroup for Rc<QuotientRing<R>>
+impl<R> AdditiveGroup for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
 {
 }
 
-impl<R> SemiRing for Rc<QuotientRing<R>>
+impl<R> SemiRing for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
 {
 }
 
-impl<R> Ring for Rc<QuotientRing<R>>
+impl<R> Ring for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
@@ -487,7 +487,7 @@ where
 ///
 /// Relies on [`EuclideanDomain::extended_gcd`] returning a canonical gcd, so
 /// `gcd == identity` is the right coprimality test.
-impl<R> Field for Rc<QuotientRing<R>>
+impl<R> Field for Arc<QuotientRing<R>>
 where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,

@@ -12,7 +12,7 @@ use itertools::{EitherOrBoth, Itertools};
 use num_bigint::BigInt;
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// The polynomial ring `R[x]` over a coefficient ring `R`.
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ where
     R::E: RingOps + Eq,
 {
     coefficients: Vec<R::E>,
-    ring: Rc<PolynomialRing<R>>,
+    ring: Arc<PolynomialRing<R>>,
 }
 
 /// Puts [`polynomials`](RingExt::polynomials) on every ring, so `structures` does not
@@ -44,12 +44,12 @@ where
     Self::E: RingOps + Eq,
 {
     /// The polynomial ring `Self[x]`.
-    fn polynomials(&self) -> Rc<PolynomialRing<Self>> {
+    fn polynomials(&self) -> Arc<PolynomialRing<Self>> {
         PolynomialRing::new(self.clone())
     }
 
     /// The ring of `n x n` matrices over `Self`.
-    fn matrices(&self, n: usize) -> Rc<crate::matrices::MatrixRing<Self>> {
+    fn matrices(&self, n: usize) -> Arc<crate::matrices::MatrixRing<Self>> {
         crate::matrices::MatrixRing::new(self.clone(), n)
     }
 
@@ -60,7 +60,7 @@ where
     fn multi_polynomials(
         &self,
         variables: usize,
-    ) -> Rc<crate::multivariate::MultivariatePolynomialRing<Self>> {
+    ) -> Arc<crate::multivariate::MultivariatePolynomialRing<Self>> {
         crate::multivariate::MultivariatePolynomialRing::new(self.clone(), variables)
     }
 }
@@ -77,9 +77,9 @@ where
     R: Ring,
     R::E: RingOps + Eq,
 {
-    /// Construct `R[x]`, wrapped in an [`Rc`] so polynomials can share the ring handle.
-    pub fn new(coeff_ring: R) -> Rc<Self> {
-        Rc::new(PolynomialRing { coeff_ring })
+    /// Construct `R[x]`, wrapped in an [`Arc`] so polynomials can share the ring handle.
+    pub fn new(coeff_ring: R) -> Arc<Self> {
+        Arc::new(PolynomialRing { coeff_ring })
     }
 
     /// The underlying coefficient ring.
@@ -89,7 +89,7 @@ where
 
     /// The indeterminate `x`, so polynomials can be written the way they are read:
     /// `x.pow(n) - 1` rather than a padded coefficient vector.
-    pub fn indeterminate(self: &Rc<Self>) -> Polynomial<R> {
+    pub fn indeterminate(self: &Arc<Self>) -> Polynomial<R> {
         self.element(vec![self.coeff_ring.zero(), self.coeff_ring.identity()])
     }
 }
@@ -143,7 +143,7 @@ where
     fn clone(&self) -> Self {
         Polynomial {
             coefficients: self.coefficients.clone(),
-            ring: Rc::clone(&self.ring),
+            ring: Arc::clone(&self.ring),
         }
     }
 }
@@ -155,7 +155,7 @@ where
 {
     fn eq(&self, other: &Self) -> bool {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &other.ring),
+            Arc::ptr_eq(&self.ring, &other.ring),
             "Polynomial operands belong to different rings"
         );
         self.coefficients == other.coefficients
@@ -177,7 +177,7 @@ where
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
+            Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
         let result: Vec<R::E> = self
@@ -201,7 +201,7 @@ where
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
+            Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
         let zero = self.ring.coeff_ring.zero();
@@ -229,7 +229,7 @@ where
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
+            Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
         if self.coefficients.is_empty() || rhs.coefficients.is_empty() {
@@ -265,7 +265,7 @@ where
     type Output = Polynomial<R>;
     fn add(self, rhs: &Polynomial<R>) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
+            Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
         let result: Vec<R::E> = self
@@ -291,7 +291,7 @@ where
     type Output = Polynomial<R>;
     fn sub(self, rhs: &Polynomial<R>) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
+            Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
         let zero = self.ring.coeff_ring.zero();
@@ -319,13 +319,13 @@ where
     type Output = Polynomial<R>;
     fn mul(self, rhs: &Polynomial<R>) -> Self::Output {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &rhs.ring),
+            Arc::ptr_eq(&self.ring, &rhs.ring),
             "Polynomial operands belong to different rings"
         );
         if self.coefficients.is_empty() || rhs.coefficients.is_empty() {
             return Polynomial {
                 coefficients: Vec::new(),
-                ring: Rc::clone(&self.ring),
+                ring: Arc::clone(&self.ring),
             };
         }
         let (a, b) = (&self.coefficients, &rhs.coefficients);
@@ -400,7 +400,7 @@ where
 /// These go through the owned operators rather than the borrowed ones. Requiring
 /// `&Polynomial<R>: Add<&Polynomial<R>>` here sends trait resolution around a cycle,
 /// because `R::E` may itself be a `Polynomial`. Swapping in the zero polynomial costs
-/// only an `Rc` bump, so the left operand is still not cloned.
+/// only an `Arc` bump, so the left operand is still not cloned.
 macro_rules! polynomial_assign_ops {
     ($($op:ident, $method:ident, $base_method:ident);* $(;)?) => {$(
         impl<R> $op<&Polynomial<R>> for Polynomial<R>
@@ -411,7 +411,7 @@ macro_rules! polynomial_assign_ops {
             fn $method(&mut self, rhs: &Polynomial<R>) {
                 let placeholder = Polynomial {
                     coefficients: Vec::new(),
-                    ring: Rc::clone(&self.ring),
+                    ring: Arc::clone(&self.ring),
                 };
                 let lhs = std::mem::replace(self, placeholder);
                 *self = lhs.$base_method(rhs.clone());
@@ -426,7 +426,7 @@ macro_rules! polynomial_assign_ops {
             fn $method(&mut self, rhs: Polynomial<R>) {
                 let placeholder = Polynomial {
                     coefficients: Vec::new(),
-                    ring: Rc::clone(&self.ring),
+                    ring: Arc::clone(&self.ring),
                 };
                 let lhs = std::mem::replace(self, placeholder);
                 *self = lhs.$base_method(rhs);
@@ -437,7 +437,7 @@ macro_rules! polynomial_assign_ops {
 polynomial_assign_ops!(AddAssign, add_assign, add; MulAssign, mul_assign, mul);
 
 
-impl<R> Domain for Rc<PolynomialRing<R>>
+impl<R> Domain for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -454,19 +454,19 @@ where
         }
         Polynomial {
             coefficients,
-            ring: Rc::clone(self),
+            ring: Arc::clone(self),
         }
     }
 }
 
-impl<R> Semigroup for Rc<PolynomialRing<R>>
+impl<R> Semigroup for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> Monoid for Rc<PolynomialRing<R>>
+impl<R> Monoid for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -476,7 +476,7 @@ where
     }
 }
 
-impl<R> CommutativeMonoid for Rc<PolynomialRing<R>>
+impl<R> CommutativeMonoid for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -486,21 +486,21 @@ where
     }
 }
 
-impl<R> AdditiveGroup for Rc<PolynomialRing<R>>
+impl<R> AdditiveGroup for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> SemiRing for Rc<PolynomialRing<R>>
+impl<R> SemiRing for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
 {
 }
 
-impl<R> Ring for Rc<PolynomialRing<R>>
+impl<R> Ring for Arc<PolynomialRing<R>>
 where
     R: Ring,
     R::E: RingOps + Eq,
@@ -518,7 +518,7 @@ where
     /// rather than only a field.
     fn divide_by(&self, divisor: &Self, lead_inverse: &R::E) -> (Self, Self) {
         debug_assert!(
-            Rc::ptr_eq(&self.ring, &divisor.ring),
+            Arc::ptr_eq(&self.ring, &divisor.ring),
             "Polynomial operands belong to different rings"
         );
         let zero_c = self.ring.coeff_ring.zero();
@@ -594,7 +594,7 @@ where
 
 /// `R[x]` is a Euclidean domain when `R` is a field. The unit part is the leading
 /// coefficient (so canonical representatives are monic polynomials).
-impl<R> EuclideanDomain for Rc<PolynomialRing<R>>
+impl<R> EuclideanDomain for Arc<PolynomialRing<R>>
 where
     R: Field,
     R::E: RingOps + Eq,
@@ -629,11 +629,11 @@ mod tests {
         Integer::from(n)
     }
 
-    fn zx() -> Rc<PolynomialRing<Integers>> {
+    fn zx() -> Arc<PolynomialRing<Integers>> {
         PolynomialRing::new(Integers::default())
     }
 
-    fn poly(ring: &Rc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
+    fn poly(ring: &Arc<PolynomialRing<Integers>>, coeffs: Vec<i64>) -> Polynomial<Integers> {
         ring.element(coeffs.into_iter().map(int).collect::<Vec<_>>())
     }
 
