@@ -58,7 +58,7 @@ where
         let f = &self.field;
         let inner =
             f.from_integer(4) * pow(f, &self.a, 3) + f.from_integer(27) * pow(f, &self.b, 2);
-        f.zero() - f.from_integer(16) * inner
+        -(f.from_integer(16) * inner)
     }
 
     pub fn field(&self) -> &F {

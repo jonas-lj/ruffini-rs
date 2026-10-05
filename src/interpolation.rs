@@ -41,20 +41,30 @@ where
     /// Builds the Lagrange basis for `nodes`, or [`None`] if two of them coincide.
     pub fn new(ring: &Arc<PolynomialRing<R>>, nodes: &[R::E]) -> Option<Self> {
         let field = ring.coefficients().clone();
+        let x = ring.indeterminate();
+        // The nodes as constant polynomials, so the factors below read as the formula
+        // does. Lifted once rather than inside the loop, which would build k^2 of them.
+        let lifted: Vec<Polynomial<R>> =
+            nodes.iter().map(|x_m| ring.constant(x_m.clone())).collect();
+
         let basis = (0..nodes.len())
             .map(|j| {
-                // l_j = prod_{m != j} (X - x_m) / (x_j - x_m). Starting the product
-                // from the scalar folds the division in, avoiding a second pass.
+                // l_j = prod_{m != j} (x - x_m) / (x_j - x_m). Starting the product from
+                // the scalar folds the division in, avoiding a second pass.
                 let mut denominator = field.identity();
                 for (m, x_m) in nodes.iter().enumerate() {
                     if m != j {
                         denominator *= nodes[j].clone() - x_m.clone();
                     }
                 }
-                let mut l = ring.element(vec![field.invert(&denominator)?]);
-                for (m, x_m) in nodes.iter().enumerate() {
+
+                let mut l = ring.constant(field.invert(&denominator)?);
+                for (m, x_m) in lifted.iter().enumerate() {
                     if m != j {
-                        l *= ring.element(vec![field.zero() - x_m.clone(), field.identity()]);
+                        // Owned operands: the borrowed `Sub` wants
+                        // `for<'c> &'c R::E: Sub<&'c R::E>`, which is the bound that
+                        // overflows through `Matrix`.
+                        l *= x.clone() - x_m.clone();
                     }
                 }
                 Some(l)

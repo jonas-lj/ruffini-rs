@@ -343,14 +343,13 @@ where
     type Output = Self;
     fn sub(mut self, rhs: Self) -> Self::Output {
         debug_assert!(Arc::ptr_eq(&self.ring, &rhs.ring), "different rings");
-        let zero = self.ring.coeff_ring.zero();
         for (monomial, c) in rhs.terms {
             match self.terms.remove(&monomial) {
                 Some(existing) => {
                     self.terms.insert(monomial, existing - c);
                 }
                 None => {
-                    self.terms.insert(monomial, zero.clone() - c);
+                    self.terms.insert(monomial, -c);
                 }
             }
         }
@@ -515,6 +514,7 @@ macro_rules! multivariate_assign_ops {
 multivariate_assign_ops!(AddAssign, add_assign, add; MulAssign, mul_assign, mul);
 
 element_pow!(MultivariatePolynomial<R>, { R: Ring, R::E: RingOps + Eq, });
+element_neg!(MultivariatePolynomial<R>, { R: Ring, R::E: RingOps + Eq, });
 
 impl<R> Semigroup for Arc<MultivariatePolynomialRing<R>>
 where
