@@ -1,46 +1,44 @@
 # ruffini
 
-A small Rust library exploring algebraic structures over arbitrary-precision
-integers.
+Algebraic structures over arbitrary-precision integers, written so that an algorithm
+reads the way the mathematics does.
 
-## What's in it
+Rings, fields, polynomials in one or many variables, matrices, elliptic curves and
+constructive reals, each generic over the others.
 
-A trait hierarchy mirroring the standard algebraic tower:
+## Finite fields
 
-```text
-Domain → Semigroup → Monoid → SemiRing → Ring → EuclideanDomain → Field
-              ↘                   ↗
-       CommutativeMonoid → AdditiveGroup
+```rust
+use ruffini::integers::Integers;
+use ruffini::structures::{Field, Monoid};
+
+let f7 = Integers::modulo(7);
+
+assert_eq!(f7.inverse(3).unwrap() * 3, f7.identity()); // 3 · 3⁻¹ = 1
 ```
 
-…together with three concrete instances:
+## Polynomials
 
-- **`Integers`** (`Z`) over `num_bigint::BigInt` — a Euclidean domain.
-- **`QuotientRing<R>`** — the quotient `R / (m)`. With a prime modulus this is
-  a finite prime field `F_p` (the `Field` impl is in place; primality is a
-  caller-supplied invariant).
-- **`PolynomialRing<R>`** — `R[x]`. When `R: Field` this is itself a Euclidean
-  domain, so you can take quotients of polynomial rings by irreducible
-  polynomials and chain the construction up to `F_{p^k}`.
-- **`MultivariatePolynomialRing<R>`** — `R[x_0, .., x_{n-1}]`, with the variable
-  count a run-time value rather than a type-level one, and terms stored sparsely
-  by exponent vector.
-- **`MatrixRing<R>`** — the `n x n` matrices over `R`, itself a ring. `Matrix` is any
-  shape, with determinant by cofactor expansion (over any ring) and inversion by
-  Gauss-Jordan (over a field).
-- **`Curve<F>`** — elliptic curves `y^2 = x^3 + ax + b` in affine coordinates, whose
-  points form an additive group.
-- **`ConstructiveReals`** — computable reals, held lazily as expression trees and
-  evaluated to any requested precision. Equality is undecidable, so they form a
-  `Ring` but not a `Field`; see `cargo run --example sqrt2`.
+Written from the indeterminate, with integers on either side of an operator, rather
+than from a vector of coefficients.
 
-`Domain::E` does not require `Eq` — only `EuclideanDomain` and `Field` do, since
-those are where an algorithm tests for zero.
+```rust
+use ruffini::integers::Integers;
+use ruffini::polynomials::RingExt;
 
-Gröbner bases are in `gröbner`: `gröbner_basis(&ring, &generators, &order)` runs
-Buchberger's algorithm with both of his criteria and returns the *reduced* basis,
-which is unique for a given ideal and monomial order. Dividing by it decides ideal
-membership.
+let zx = Integers::default().polynomials(); // Z[x]
+let x = zx.indeterminate();
+
+let modulus = x.pow(7) - 1;        // x⁷ - 1
+let p = 2 * x.pow(3) + 3 * x - 1;  // 2x³ + 3x - 1
+
+assert_eq!(p.evaluate(&2.into()), 21.into());
+```
+
+## Gröbner bases
+
+Buchberger's algorithm, under any monomial order, returning the reduced basis. Dividing
+by it decides membership of the ideal.
 
 ```rust
 use ruffini::gröbner::gröbner_basis;
@@ -52,73 +50,32 @@ use ruffini::structures::CommutativeMonoid;
 let r = Integers::modulo(7).multi_polynomials(2);
 let (x, y) = (r.variable(0), r.variable(1));
 
-// The circle meeting the line x = y: 2y^2 = 1, and 1/2 is 4 in F_7.
+// The circle meeting the line x = y, so 2y² = 1 and y² = 4.
 let basis = gröbner_basis(&r, &[x.pow(2) + y.pow(2) - 1, x.clone() - y.clone()], &Lex);
 assert_eq!(basis, vec![x.clone() - y.clone(), y.pow(2) + 3]);
 
-// x^2 + y^2 - 1 lies in the ideal, so it reduces to zero.
-assert_eq!((x.pow(2) + y.pow(2) - 1).divide(&basis, &Lex).1, r.zero());
+assert!(r.is_zero(&(x.pow(2) + y.pow(2) - 1).divide(&basis, &Lex).1));
 ```
 
-Polynomial interpolation is in `interpolation`: `interpolate(&ring, &x, &y)` for a
-one-off, or `Interpolation::new(&ring, &x)` to reuse the Lagrange basis across
-several value sets.
+## Constructive reals
 
-`Field::invert` and the generic `extended_gcd` both rely on
-`EuclideanDomain::unit_part` / `unit_inverse` to canonicalise gcds — non-negative
-for `Z`, monic for `R[x]`.
-
-## Example
+A value is a recipe rather than digits, evaluated to whatever precision is asked of it.
 
 ```rust
-use ruffini::integers::Integers;
-use ruffini::structures::{Field, Monoid};
+use ruffini::constructive_reals::ConstructiveReal;
 
-let f7 = Integers::modulo(7);
+let root2 = ConstructiveReal::from_int(2).sqrt();
 
-assert_eq!(f7.inverse(3).unwrap() * 3, f7.identity()); // 3 · 3⁻¹ = 1 in F_7
-```
-
-Integers are embedded into the ring on the fly, via `Ring::from_integer` (the
-canonical map `n ↦ n · 1`, by double-and-add). To name an element explicitly,
-use `Domain::element`:
-
-```rust
-use ruffini::integers::Integers;
-use ruffini::polynomials::RingExt;
-use ruffini::structures::Domain;
-
-let f7 = Integers::modulo(7);
-assert_eq!(&f7.element(3) + &f7.element(6), f7.element(2)); // 9 ≡ 2 (mod 7)
-
-let f7x = f7.polynomials(); // F_7[x], and f7x.polynomials() is F_7[x][y]
-assert_eq!(f7x.element(vec![f7.element(1), f7.element(2)]).degree(), Some(1));
-```
-
-A polynomial is usually clearer built from the indeterminate than from a
-coefficient vector. `PolynomialRing::indeterminate` gives `x`, `pow` takes any
-integer exponent, and plain integers work on either side of an operator:
-
-```rust
-use ruffini::integers::Integers;
-use ruffini::polynomials::RingExt;
-
-let zx = Integers::default().polynomials();
-let x = zx.indeterminate();
-
-let modulus = x.pow(7) - 1;       // x^7 - 1, the modulus of a group ring
-let p = 2 * x.pow(3) + 3 * x - 1; // 2x^3 + 3x - 1
-
-assert_eq!(modulus.degree(), Some(7));
-assert_eq!(p.degree(), Some(3));
+assert_eq!(root2.to_decimal(10), "1.4142135624");
+assert_eq!((root2.clone() * root2).to_decimal(10), "2.0000000000");
 ```
 
 ## Demos
 
 ```text
-cargo run --release --example sqrt2              # constructive reals
-cargo run --release --example hadamard -- 23     # Hadamard matrix of order 92
-cargo run --release --example aks                # AKS primality test
+cargo run --release --example sqrt2             # constructive reals
+cargo run --release --example hadamard -- 23    # Hadamard matrix of order 92
+cargo run --release --example aks               # AKS primality test
 ```
 
 ## Build & test
@@ -127,4 +84,6 @@ cargo run --release --example aks                # AKS primality test
 cargo test
 ```
 
-Named for [Paolo Ruffini](https://en.wikipedia.org/wiki/Paolo_Ruffini).
+## License
+
+MIT. Named for [Paolo Ruffini](https://en.wikipedia.org/wiki/Paolo_Ruffini).
