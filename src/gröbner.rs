@@ -305,6 +305,28 @@ mod tests {
     }
 
     #[test]
+    fn over_q_the_textbook_answer_needs_no_translation() {
+        // The same ideal as above, but over the rationals the basis is literally the
+        // one Cox, Little and O'Shea print: {x^2, xy, y^2 - x/2}.
+        let q = Integers::rationals();
+        let r = q.multi_polynomials(2);
+        let (x, y) = (r.variable(0), r.variable(1));
+        let f1 = x.pow(3) - 2 * x.clone() * y.clone();
+        let f2 = x.pow(2) * y.clone() - 2 * y.pow(2) + x.clone();
+
+        let basis = gröbner_basis(&r, &[f1, f2], &GradedLex);
+        let y2_minus_half_x = r.element(vec![
+            (vec![0, 2], q.identity()),
+            (vec![1, 0], q.fraction(-1, 2)),
+        ]);
+        assert_eq!(
+            basis,
+            vec![x.pow(2), x.clone() * y.clone(), y2_minus_half_x]
+        );
+        assert!(is_gröbner_basis(&r, &basis, &GradedLex));
+    }
+
+    #[test]
     fn a_line_meeting_a_circle_reduces_to_one_variable() {
         // x^2 + y^2 = 1 and x = y, so 2y^2 = 1 and y^2 = 4; -4 is 3 in F_7.
         let r = f7x2();

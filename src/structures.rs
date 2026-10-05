@@ -179,6 +179,14 @@ where
         QuotientRing::new(self.clone(), modulus)
     }
 
+    /// The field of fractions of this domain: `Q` from `Z`, `F(x)` from `F[x]`.
+    fn fractions(&self) -> Arc<crate::fractions::FractionField<Self>>
+    where
+        Self: Clone + Sized,
+    {
+        crate::fractions::FractionField::new(self.clone())
+    }
+
     /// Returns `(gcd, x, y)` with `x * a + y * b == gcd`. See
     /// [`crate::euclidean::extended_gcd`], which this forwards to.
     fn extended_gcd(&self, a: Self::E, b: Self::E) -> (Self::E, Self::E, Self::E)
