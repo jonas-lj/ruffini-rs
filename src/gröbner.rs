@@ -159,8 +159,6 @@ where
         let inverse = field.invert(c).expect("a leading coefficient is nonzero");
         ring.element(vec![(divide(&l, m), inverse)])
     };
-    // Owned operands: the borrowed ones would put a higher-ranked bound on the
-    // coefficients into this module's whole public signature, for one product a pair.
     scale(fm, fc) * f.clone() - scale(gm, gc) * g.clone()
 }
 

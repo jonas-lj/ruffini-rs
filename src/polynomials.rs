@@ -452,9 +452,6 @@ where
         if a.len().min(b.len()) >= KARATSUBA_THRESHOLD {
             return self.ring.element(karatsuba(&self.ring.coeff_ring, a, b));
         }
-        // Below the threshold the borrowed coefficient product is worth keeping: it
-        // builds each term without copying either factor, which Karatsuba's recursion
-        // cannot do once it is summing subproducts.
         let (n, m) = (a.len(), b.len());
         let zero = self.ring.coeff_ring.zero();
         let result: Vec<R::E> = (0..n + m - 1)
