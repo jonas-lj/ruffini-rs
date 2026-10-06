@@ -22,6 +22,7 @@ mod macros;
 pub mod constructive_reals;
 pub mod elliptic;
 pub mod euclidean;
+pub mod factorisation;
 pub mod fft;
 pub mod finite_fields;
 pub mod fractions;

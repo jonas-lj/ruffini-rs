@@ -33,6 +33,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   under any `MonomialOrder` (`Lex`, `GradedLex`), returning the reduced basis.
 - **Division** — Euclidean for polynomials over a field, `div_rem_monic` by a monic
   divisor over any ring, and `MultivariatePolynomial::divide` by several divisors at once.
+- **Factorisation** — `factorisation::factorise` splits a polynomial over a prime field
+  into irreducible factors with multiplicities, by Cantor–Zassenhaus; `squarefree` and
+  `distinct_degree` are available on their own.
 - **Extended gcd** — `euclidean::extended_gcd` over any Euclidean domain, canonicalised:
   positive over `Z`, monic over `F[x]`.
 - **Interpolation** — `interpolation::interpolate`, or `Interpolation::new` to reuse the

@@ -135,6 +135,22 @@ where
             })
     }
 
+    /// The formal derivative, `sum i * c_i * x^(i-1)`.
+    ///
+    /// Formal, so in characteristic `p` the derivative of `x^p` is zero - which is what
+    /// squarefree decomposition has to watch for.
+    pub fn derivative(&self) -> Self {
+        let ring = &self.ring.coeff_ring;
+        let coefficients: Vec<R::E> = self
+            .coefficients
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(i, c)| ring.from_integer(i as u64) * c.clone())
+            .collect();
+        self.ring.element(coefficients)
+    }
+
     /// The evaluation map as a closure, for where a function value is wanted.
     // Droppable once fn_traits is stable: Polynomial could implement Fn directly.
     pub fn as_fn(&self) -> impl Fn(&R::E) -> R::E + '_ {
