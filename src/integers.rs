@@ -5,9 +5,9 @@ use crate::structures::{
     AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Monoid, QuotientRing, Ring,
     SemiRing, Semigroup, Domain,
 };
-use derive_more::{Add, Display, From, Into, Mul, Sub};
 use num_bigint::BigInt;
-use std::ops::{AddAssign, MulAssign, Neg, SubAssign};
+use std::fmt;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::Arc;
 
 /// Handle for the set of integers, used to construct [`Integer`] values.
@@ -15,10 +15,36 @@ use std::sync::Arc;
 pub struct Integers {}
 
 /// An integer, wrapping [`BigInt`].
-#[derive(Display, From, Into, Clone, PartialEq, Eq, Debug, Add, Sub, Mul)]
-#[mul(forward)]
-#[from(BigInt, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Integer(BigInt);
+
+impl fmt::Display for Integer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<Integer> for BigInt {
+    fn from(n: Integer) -> BigInt {
+        n.0
+    }
+}
+
+/// `From` for each integer type [`BigInt`] accepts, so that a literal can stand for an
+/// element wherever one is asked for.
+///
+/// Listed rather than blanket over `T: Into<BigInt>`: that would collide with the
+/// reflexive `From<Integer> for Integer`, since `From<Integer> for BigInt` exists.
+macro_rules! integer_from {
+    ($($from:ty),+ $(,)?) => {$(
+        impl From<$from> for Integer {
+            fn from(n: $from) -> Integer {
+                Integer(BigInt::from(n))
+            }
+        }
+    )+};
+}
+integer_from!(BigInt, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
 
 impl Integers {
     /// The ring of integers modulo `modulus`, e.g. `Integers::modulo(7)`. A prime
@@ -60,10 +86,17 @@ macro_rules! integer_assign_ops {
 }
 integer_assign_ops!(AddAssign, add_assign; SubAssign, sub_assign; MulAssign, mul_assign);
 
-/// Borrowed operand combinations, forwarded to [`BigInt`]'s own reference ops so that
-/// `&a + &b` allocates the result without copying either input.
-macro_rules! integer_ref_ops {
+/// Every operand combination, forwarded to [`BigInt`]'s own, so that `&a + &b`
+/// allocates the result without copying either input.
+macro_rules! integer_ops {
     ($($op:ident, $method:ident);* $(;)?) => {$(
+        impl $op for Integer {
+            type Output = Integer;
+            fn $method(self, rhs: Integer) -> Integer {
+                Integer(self.0.$method(rhs.0))
+            }
+        }
+
         impl $op<&Integer> for &Integer {
             type Output = Integer;
             fn $method(self, rhs: &Integer) -> Integer {
@@ -86,7 +119,7 @@ macro_rules! integer_ref_ops {
         }
     )*};
 }
-integer_ref_ops!(Add, add; Sub, sub; Mul, mul);
+integer_ops!(Add, add; Sub, sub; Mul, mul);
 
 impl Neg for Integer {
     type Output = Integer;
