@@ -12,6 +12,5 @@ members = ["demos"]
 
 [dependencies]
 num-bigint = "0.4.6"
-derive_more = { version = "1.0.0", features = ["from", "into", "add", "display", "mul"] }
 itertools = "0.15.0"
 num-traits = "0.2.19"
