@@ -43,6 +43,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   has a root of unity.
 - **Exponentiation** — `x.pow(n)` by square-and-multiply, the exponent any integer type
   up to `BigInt`.
+- **Multi-point evaluation** — `p.evaluations(start, step)` walks an arithmetic
+  progression by forward differences, at one addition per coefficient per point and no
+  multiplication.
 - **Number theory** — `number_theory::factorise`, `totient` and `multiplicative_order`,
   by trial division, sized for the small moduli that turn up as parameters.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
@@ -146,6 +149,7 @@ assert_eq!((root2.clone() * root2).to_decimal(10), "2.0000000000");
 cargo run --release --example sqrt2             # constructive reals
 cargo run --release --example hadamard -- 23    # Hadamard matrix of order 92
 cargo run --release --example aks               # AKS primality test
+cargo run --release --example shamir            # Shamir secret sharing
 ```
 
 ## Build & test

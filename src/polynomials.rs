@@ -135,6 +135,12 @@ where
             })
     }
 
+    /// Evaluations at `start`, `start + step`, and so on. See
+    /// [`crate::evaluation::evaluations`], which this forwards to.
+    pub fn evaluations(&self, start: &R::E, step: &R::E) -> crate::evaluation::Evaluations<R> {
+        crate::evaluation::evaluations(self, start, step)
+    }
+
     /// The evaluation map as a closure, for where a function value is wanted.
     // Droppable once fn_traits is stable: Polynomial could implement Fn directly.
     pub fn as_fn(&self) -> impl Fn(&R::E) -> R::E + '_ {
