@@ -59,7 +59,7 @@ fn main() {
         let ys: Vec<Element> = subset.iter().map(|i| dealt[i - 1].clone()).collect();
         let p = interpolate(&ring, &xs, &ys).expect("the x values are distinct");
         assert_eq!(p, f, "subset {subset:?} rebuilt a different polynomial");
-        assert_eq!(p.evaluate(&field.zero()), field.element(secret));
+        assert_eq!(p.coefficient(0), field.element(secret));
         recovered += 1;
     }
     println!("recovered the secret from all {recovered} subsets of {threshold} shares");

@@ -125,6 +125,17 @@ where
         &self.coefficients
     }
 
+    /// The coefficient of `x^i`, which is zero past the degree.
+    ///
+    /// `coefficient(0)` is the constant term, including for the zero polynomial, whose
+    /// coefficient slice is empty.
+    pub fn coefficient(&self, i: usize) -> R::E {
+        self.coefficients
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| self.ring.coeff_ring.zero())
+    }
+
     /// Evaluates at `x` by Horner's method, in `degree` multiplications.
     pub fn evaluate(&self, x: &R::E) -> R::E {
         self.coefficients
@@ -890,6 +901,25 @@ mod tests {
         // x^n * x^m = x^(n+m), which pins the shifts down independently of the sums.
         let x = f7x.indeterminate();
         assert_eq!(&x.pow(3 * t) * &x.pow(2 * t), x.pow(5 * t));
+    }
+
+    #[test]
+    fn coefficients_past_the_degree_are_zero() {
+        let zx = zx();
+        let p = poly(&zx, vec![3, 0, 7]);
+
+        assert_eq!(p.coefficient(0), int(3));
+        assert_eq!(p.coefficient(1), int(0));
+        assert_eq!(p.coefficient(2), int(7));
+        assert_eq!(p.coefficient(3), int(0));
+        assert_eq!(p.coefficient(1_000), int(0));
+
+        // The zero polynomial stores nothing, so the slice cannot answer this.
+        assert!(zx.zero().coefficients().is_empty());
+        assert_eq!(zx.zero().coefficient(0), int(0));
+
+        // Agrees with evaluating at zero, which is the roundabout way to the same term.
+        assert_eq!(p.coefficient(0), p.evaluate(&int(0)));
     }
 
     #[test]
