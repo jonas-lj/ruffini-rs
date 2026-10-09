@@ -145,11 +145,14 @@ assert_eq!((root2.clone() * root2).to_decimal(10), "2.0000000000");
 
 ## Demos
 
+In their own crate, so that what they need - a random number generator, for one - stays
+out of the library's dependencies.
+
 ```text
-cargo run --release --example sqrt2             # constructive reals
-cargo run --release --example hadamard -- 23    # Hadamard matrix of order 92
-cargo run --release --example aks               # AKS primality test
-cargo run --release --example shamir            # Shamir secret sharing
+cargo run --release -p ruffini-demos --bin sqrt2          # constructive reals
+cargo run --release -p ruffini-demos --bin hadamard -- 23 # Hadamard matrix of order 92
+cargo run --release -p ruffini-demos --bin aks            # AKS primality test
+cargo run --release -p ruffini-demos --bin shamir         # Shamir secret sharing
 ```
 
 ## Build & test
