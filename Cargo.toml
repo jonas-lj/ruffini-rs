@@ -7,6 +7,9 @@ description = "Algebraic structures over arbitrary-precision integers"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["demos"]
+
 [dependencies]
 num-bigint = "0.4.6"
 derive_more = { version = "1.0.0", features = ["from", "into", "add", "display", "mul"] }

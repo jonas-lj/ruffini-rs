@@ -6,13 +6,14 @@
 //! them determine the polynomial by interpolation, and so the secret; any `t - 1` leave
 //! every secret equally possible, which this demonstrates rather than asserts.
 //!
-//! Not a secure implementation. The coefficients come from a fixed sequence so that the
-//! output is reproducible, where real use needs them uniform and unguessable.
+//! The coefficients come from `rand`'s thread generator, which that crate documents as
+//! cryptographically secure. The arithmetic here is not constant time, so this
+//! demonstrates the scheme rather than offering an implementation fit to deploy.
 //!
-//! Run with `cargo run --release --example shamir -- [secret] [threshold] [shares]`.
+//! Run with `cargo run --release --bin shamir -- [secret] [threshold] [shares]`.
 
 use itertools::Itertools;
-use num_bigint::BigInt;
+use rand::RngExt;
 use ruffini::integers::Integers;
 use ruffini::interpolation::interpolate;
 use ruffini::polynomials::{PolynomialRing, RingExt};
@@ -36,9 +37,11 @@ fn main() {
     let field = Integers::modulo(PRIME);
     let ring = field.polynomials();
 
-    // f(x) = secret + a_1 x + ... + a_{t-1} x^{t-1}.
+    // f(x) = secret + a_1 x + ... + a_{t-1} x^{t-1}, the higher coefficients uniform
+    // over the field, which is what hides the secret.
+    let mut rng = rand::rng();
     let mut coefficients = vec![field.element(secret)];
-    coefficients.extend((0..threshold - 1).map(|i| field.element(pseudorandom(i as u64))));
+    coefficients.extend((0..threshold - 1).map(|_| field.element(rng.random_range(0..PRIME))));
     let f = ring.element(coefficients);
 
     // The shares are f at 1, 2, ..., n - an arithmetic progression, so one pass of
@@ -101,14 +104,4 @@ fn demonstrate_that_one_share_short_tells_nothing(
 
 fn parse<T: std::str::FromStr>(arg: Option<String>, default: T) -> T {
     arg.and_then(|a| a.parse().ok()).unwrap_or(default)
-}
-
-/// A fixed sequence standing in for randomness, which is what makes this a
-/// demonstration of the algebra and not a secret-sharing implementation.
-fn pseudorandom(i: u64) -> BigInt {
-    let mut state = i.wrapping_add(1).wrapping_mul(6364136223846793005);
-    state = state
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1442695040888963407);
-    BigInt::from(state % PRIME)
 }

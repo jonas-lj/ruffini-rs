@@ -1,0 +1,14 @@
+[package]
+name = "ruffini-demos"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Demonstration programs for the ruffini crate"
+publish = false
+
+[dependencies]
+ruffini = { path = ".." }
+itertools = "0.15.0"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
+rand = "0.10.3"
