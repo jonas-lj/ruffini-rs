@@ -5,8 +5,8 @@
 //! denominators over `Z`, monic ones over `F[x]`.
 
 use crate::structures::{
-    AdditiveGroup, CommutativeMonoid, DivRem, Domain, EuclideanDomain, Field, Monoid, Ring,
-    RingOps, SemiRing, Semigroup,
+    AdditiveGroup, CommutativeMonoid, DivRem, Division, Domain, EuclideanDomain, Field, Monoid,
+    Ring, RingOps, SemiRing, Semigroup,
 };
 use num_bigint::BigInt;
 use std::fmt;
@@ -367,6 +367,8 @@ where
     R: EuclideanDomain,
     R::E: RingOps + DivRem + Eq,
 {
+    type Reducer = Division<Self::E>;
+
     fn unit_part(&self, x: &Self::E) -> Self::E {
         if self.is_zero(x) {
             self.identity()

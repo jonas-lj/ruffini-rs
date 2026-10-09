@@ -5,8 +5,8 @@
 //! [`crate::structures::QuotientRing`] pattern.
 
 use crate::structures::{
-    AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Field, Monoid, Ring, RingOps,
-    SemiRing, Semigroup, Domain,
+    AdditiveGroup, CommutativeMonoid, DivRem, Division, Domain, EuclideanDomain, Field, Monoid,
+    Ring, RingOps, SemiRing, Semigroup,
 };
 use itertools::{EitherOrBoth, Itertools};
 use num_bigint::BigInt;
@@ -740,6 +740,8 @@ where
     R: Field,
     R::E: RingOps + Eq,
 {
+    type Reducer = Division<Self::E>;
+
     fn unit_part(&self, x: &Self::E) -> Self::E {
         let lead = x
             .lead()

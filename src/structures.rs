@@ -168,6 +168,10 @@ pub trait EuclideanDomain: Ring
 where
     Self::E: RingOps + DivRem + Eq,
 {
+    /// How a quotient by a fixed modulus reduces. [`Division`] unless the domain can
+    /// do better once the modulus is known.
+    type Reducer: Reduce<Self::E>;
+
     /// Returns the unit part of `x` (the unit that, when divided out, leaves the
     /// canonical representative of `x`'s associate class).
     ///
@@ -236,14 +240,63 @@ where
     ring: Arc<QuotientRing<R>>,
 }
 
-/// The quotient ring `R / (modulus)`, where `R` is a Euclidean domain.
+/// Precomputation for reducing modulo a fixed element.
+///
+/// A [`QuotientRing`] prepares one when it is built and uses it for every reduction
+/// after that, so a domain that can trade division for cheaper arithmetic once the
+/// modulus is known has somewhere to keep the setup.
+pub trait Reduce<E>: Sized + Clone {
+    /// Prepares to reduce by `modulus`, which it takes ownership of.
+    fn prepare(modulus: E) -> Self;
+
+    /// The modulus prepared for.
+    fn modulus(&self) -> &E;
+
+    /// `value` reduced to a representative of its class modulo [`Self::modulus`].
+    fn reduce(&self, value: E) -> E;
+}
+
+/// Reduction by division, which is what every Euclidean domain can do unaided.
 #[derive(Debug, Clone)]
+pub struct Division<E>(E);
+
+impl<E: DivRem + Clone> Reduce<E> for Division<E> {
+    fn prepare(modulus: E) -> Self {
+        Division(modulus)
+    }
+
+    fn modulus(&self) -> &E {
+        &self.0
+    }
+
+    fn reduce(&self, value: E) -> E {
+        value.div_rem(&self.0).1
+    }
+}
+
+/// The quotient ring `R / (modulus)`, where `R` is a Euclidean domain.
+#[derive(Clone)]
 pub struct QuotientRing<R: EuclideanDomain>
 where
     R::E: RingOps + DivRem + Eq,
 {
     ring: R,
-    modulus: R::E,
+    reducer: R::Reducer,
+}
+
+/// Written out rather than derived, so that the reducer - which a caller never sees -
+/// does not have to be `Debug` for the ring to be.
+impl<R> fmt::Debug for QuotientRing<R>
+where
+    R: EuclideanDomain + fmt::Debug,
+    R::E: RingOps + DivRem + Eq + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QuotientRing")
+            .field("ring", &self.ring)
+            .field("modulus", self.modulus())
+            .finish()
+    }
 }
 
 impl<R> QuotientRing<R>
@@ -254,7 +307,10 @@ where
     /// Construct `R / (modulus)`, wrapped in an [`Arc`] so that elements can hold a
     /// cheap shared reference back to their containing ring.
     pub fn new(ring: R, modulus: R::E) -> Arc<Self> {
-        Arc::new(QuotientRing { ring, modulus })
+        Arc::new(QuotientRing {
+            ring,
+            reducer: R::Reducer::prepare(modulus),
+        })
     }
 
     /// The ring this is a quotient of, which is where representatives come from.
@@ -264,11 +320,11 @@ where
 
     /// The modulus generating the ideal `(modulus)` that this quotient is taken by.
     pub fn modulus(&self) -> &R::E {
-        &self.modulus
+        self.reducer.modulus()
     }
 
     fn reduce(&self, value: R::E) -> R::E {
-        value.div_rem(&self.modulus).1
+        self.reducer.reduce(value)
     }
 
     /// Whether a representative stands for the zero class, i.e. the modulus divides it.
@@ -276,7 +332,7 @@ where
     /// Distinct from [`CommutativeMonoid::is_zero`], which takes an element of the
     /// quotient rather than one of the ring underneath it.
     fn represents_zero(&self, a: &R::E) -> bool {
-        a.div_rem(&self.modulus).1 == self.ring.zero()
+        self.reduce(a.clone()) == self.ring.zero()
     }
 }
 
@@ -535,7 +591,7 @@ where
         if self.is_zero(x) {
             return None;
         }
-        let (gcd, s, _) = self.ring.extended_gcd(x.value.clone(), self.modulus.clone());
+        let (gcd, s, _) = self.ring.extended_gcd(x.value.clone(), self.modulus().clone());
         if gcd != self.ring.identity() {
             return None;
         }

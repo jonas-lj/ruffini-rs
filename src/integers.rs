@@ -2,10 +2,11 @@
 
 use crate::fractions::FractionField;
 use crate::structures::{
-    AdditiveGroup, CommutativeMonoid, DivRem, EuclideanDomain, Monoid, QuotientRing, Ring,
-    SemiRing, Semigroup, Domain,
+    AdditiveGroup, CommutativeMonoid, DivRem, Domain, EuclideanDomain, Monoid, QuotientRing,
+    Reduce, Ring, SemiRing, Semigroup,
 };
 use num_bigint::BigInt;
+use num_traits::{Signed, Zero};
 use std::fmt;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::Arc;
@@ -128,6 +129,64 @@ impl Neg for Integer {
     }
 }
 
+/// Barrett reduction, for the quotient rings over `Z`.
+///
+/// With `mu = floor(2^s / |N|)` worked out once, reducing a value below `N^2` is two
+/// multiplications and a shift where division would be a division. The remainder takes
+/// the sign of the value, as `%` does, so representatives are unchanged.
+#[derive(Debug, Clone)]
+pub struct Barrett {
+    /// As given, which is what the quotient ring reports.
+    modulus: Integer,
+    /// Its absolute value, which the arithmetic works with.
+    absolute: BigInt,
+    /// `absolute` squared, above which the quotient estimate is not valid.
+    square: BigInt,
+    mu: BigInt,
+    shift: u64,
+}
+
+impl Reduce<Integer> for Barrett {
+    fn prepare(modulus: Integer) -> Self {
+        let absolute = BigInt::from(modulus.clone()).abs();
+        assert!(!absolute.is_zero(), "zero modulus");
+        let shift = 2 * absolute.bits();
+        let mu = (BigInt::from(1) << shift) / &absolute;
+        let square = &absolute * &absolute;
+        Barrett {
+            modulus,
+            absolute,
+            square,
+            mu,
+            shift,
+        }
+    }
+
+    fn modulus(&self) -> &Integer {
+        &self.modulus
+    }
+
+    fn reduce(&self, value: Integer) -> Integer {
+        let x = BigInt::from(value);
+        let negative = x.is_negative();
+        let magnitude = if negative { -x } else { x };
+
+        let mut r = if magnitude < self.square {
+            let quotient = (&magnitude * &self.mu) >> self.shift;
+            magnitude - quotient * &self.absolute
+        } else {
+            // Above the bound the estimate is no good, so divide after all.
+            magnitude % &self.absolute
+        };
+        // The estimate is short by at most two.
+        while r >= self.absolute {
+            r -= &self.absolute;
+        }
+
+        Integer(if negative { -r } else { r })
+    }
+}
+
 impl DivRem for Integer {
     fn div_rem(&self, divisor: &Self) -> (Self, Self) {
         let q = &self.0 / &divisor.0;
@@ -155,6 +214,8 @@ impl SemiRing for Integers {}
 impl Ring for Integers {}
 
 impl EuclideanDomain for Integers {
+    type Reducer = Barrett;
+
     /// The sign of `x` (`-1` for negative, `1` for non-negative including zero).
     fn unit_part(&self, x: &Self::E) -> Self::E {
         if x.0 < BigInt::from(0) {
