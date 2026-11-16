@@ -8,12 +8,18 @@ use crate::euclidean::extended_gcd;
 use crate::integers::Integers;
 use crate::number_theory::factorise;
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
-use crate::structures::{Domain, EuclideanDomain, Monoid, QuotientRing};
+use crate::structures::{
+    CommutativeMonoid, Domain, EuclideanDomain, Monoid, QuotientRing, QuotientRingElement,
+};
 use num_bigint::BigInt;
+use num_traits::Zero;
 use std::sync::Arc;
 
 /// `F_p`, the integers modulo a prime.
 pub type PrimeField = Arc<QuotientRing<Integers>>;
+
+/// An element of a prime field.
+pub type Residue = QuotientRingElement<Integers>;
 
 /// `F_{p^k}`, a quotient of `F_p[x]` by an irreducible polynomial of degree `k`.
 pub type ExtensionField = Arc<QuotientRing<Arc<PolynomialRing<PrimeField>>>>;
@@ -145,6 +151,94 @@ pub fn finite_field(p: impl Into<BigInt>, k: usize) -> ExtensionField {
     ring.quotient(modulus)
 }
 
+/// The Legendre symbol of `a`: `0` when `a` is zero, `1` when it is a nonzero square,
+/// and `-1` when it is not a square.
+///
+/// Euler's criterion computes it as `a^((p-1)/2)`.
+///
+/// # Panics
+/// If the characteristic is two, where every element is a square and the symbol says
+/// nothing.
+pub fn legendre_symbol(field: &PrimeField, a: &Residue) -> i8 {
+    let p = field.order();
+    assert!(
+        p != BigInt::from(2),
+        "the Legendre symbol needs an odd characteristic"
+    );
+    if field.is_zero(a) {
+        return 0;
+    }
+    if field.pow(a, (&p - 1u32) / 2u32) == field.identity() {
+        1
+    } else {
+        -1
+    }
+}
+
+/// A square root of `a` in `F_p`, or [`None`] when `a` is not a square.
+///
+/// Tonelli and Shanks: write `p - 1 = q * 2^s` with `q` odd, and walk `a^q` down the
+/// subgroup of order `2^s` until it reaches one, correcting the root at each step.
+///
+/// Both roots are `r` and `-r`; this returns whichever the algorithm reaches.
+///
+/// # Panics
+/// If the modulus is not prime, where the search for a non-residue need not terminate.
+pub fn sqrt(field: &PrimeField, a: &Residue) -> Option<Residue> {
+    let p = field.order();
+    // Squaring is the identity in characteristic two.
+    if p == BigInt::from(2) {
+        return Some(a.clone());
+    }
+    match legendre_symbol(field, a) {
+        0 => return Some(field.zero()),
+        -1 => return None,
+        _ => {}
+    }
+
+    let one = field.identity();
+    let (mut q, mut s) = (&p - 1u32, 0u32);
+    while (&q % 2u32).is_zero() {
+        q /= 2u32;
+        s += 1;
+    }
+    // p = 3 mod 4 leaves the odd part one halving away, so no search is needed.
+    if s == 1 {
+        return Some(field.pow(a, (&p + 1u32) / 4u32));
+    }
+
+    let mut z = field.element(2);
+    while legendre_symbol(field, &z) != -1 {
+        assert!(
+            z != field.zero(),
+            "no non-residue found: the modulus is not prime"
+        );
+        z = z + 1;
+    }
+
+    let mut m = s;
+    let mut c = field.pow(&z, q.clone());
+    let mut t = field.pow(a, q.clone());
+    let mut r = field.pow(a, (&q + 1u32) / 2u32);
+    while t != one {
+        // The least i with t^(2^i) = 1, which is below m while t is not one.
+        let mut i = 0;
+        let mut square = t.clone();
+        while square != one {
+            square = &square * &square;
+            i += 1;
+        }
+        // t has order 2^i with i < m, so m falls every round and the loop ends.
+        assert!(i < m, "the modulus is not prime");
+        let b = field.pow(&c, BigInt::from(2).pow(m - i - 1));
+        m = i;
+        c = &b * &b;
+        t *= c.clone();
+        r *= b;
+    }
+    Some(r)
+}
+
 /// Whether `f` is irreducible over `F_p`, by Rabin's test.
 ///
 /// `f` of degree `k` is irreducible exactly when `x^(p^k) = x` in `F_p[x]/(f)` while
@@ -252,6 +346,121 @@ mod tests {
             return k == 1;
         }
         (1..=k / 2).all(|d| monic(ring, d).iter().all(|g| f.div_rem(g).1 != ring.zero()))
+    }
+
+    #[test]
+    fn the_legendre_symbol_is_zero_one_or_minus_one_and_multiplicative() {
+        for prime in [3u32, 5, 7, 11, 13, 17, 97] {
+            let field = Integers::modulo(prime);
+            let squares: Vec<_> = (0..prime)
+                .map(|n| {
+                    let x = field.element(n);
+                    &x * &x
+                })
+                .collect();
+
+            for n in 0..prime {
+                let a = field.element(n);
+                let symbol = legendre_symbol(&field, &a);
+                let expected = if field.is_zero(&a) {
+                    0
+                } else if squares.contains(&a) {
+                    1
+                } else {
+                    -1
+                };
+                assert_eq!(symbol, expected, "({n} / {prime})");
+            }
+
+            // Multiplicative, which is the property that characterises it.
+            for m in 0..prime {
+                for n in 0..prime {
+                    let (x, y) = (field.element(m), field.element(n));
+                    assert_eq!(
+                        legendre_symbol(&field, &(&x * &y)),
+                        legendre_symbol(&field, &x) * legendre_symbol(&field, &y),
+                        "({m} * {n} / {prime})"
+                    );
+                }
+            }
+        }
+
+        // 3^2 = 2 mod 7, while 3 is not a square there.
+        let f7 = Integers::modulo(7);
+        assert_eq!(legendre_symbol(&f7, &f7.element(2)), 1);
+        assert_eq!(legendre_symbol(&f7, &f7.element(3)), -1);
+        assert_eq!(legendre_symbol(&f7, &f7.zero()), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "odd characteristic")]
+    fn the_legendre_symbol_needs_an_odd_characteristic() {
+        let f2 = Integers::modulo(2);
+        legendre_symbol(&f2, &f2.identity());
+    }
+
+    #[test]
+    fn square_roots_square_back_and_exist_exactly_for_the_residues() {
+        for prime in [2u32, 3, 5, 7, 11, 13, 17, 23, 97, 257] {
+            // Tonelli and Shanks needs a prime, so the test says so rather than
+            // assuming it.
+            assert_eq!(factorise(prime), vec![(BigInt::from(prime), 1)], "{prime}");
+            let field = Integers::modulo(prime);
+
+            let mut roots = 0;
+            for n in 0..prime {
+                let a = field.element(n);
+                match sqrt(&field, &a) {
+                    Some(r) => {
+                        assert_eq!(&r * &r, a, "sqrt({n}) in F_{prime}");
+                        roots += 1;
+                    }
+                    // Not a square: nothing squares to it.
+                    None => {
+                        assert!(
+                            (0..prime).all(|m| {
+                                let x = field.element(m);
+                                &x * &x != a
+                            }),
+                            "F_{prime} has a root of {n} that sqrt missed"
+                        );
+                    }
+                }
+            }
+            // Zero, and half the nonzero elements.
+            let expected = if prime == 2 { 2 } else { 1 + (prime - 1) / 2 };
+            assert_eq!(roots, expected, "in F_{prime}");
+        }
+    }
+
+    #[test]
+    fn square_roots_in_a_field_with_a_long_two_adic_tail() {
+        // 40961 = 5 * 2^13 + 1, so the main loop runs rather than the p = 3 mod 4
+        // shortcut, and runs deep.
+        let prime = 40961u32;
+        assert_eq!(factorise(prime), vec![(BigInt::from(prime), 1)]);
+        let field = Integers::modulo(prime);
+
+        let (mut squares, mut not) = (0, 0);
+        for n in (0..prime).step_by(37) {
+            let a = field.element(n);
+            match sqrt(&field, &a) {
+                Some(r) => {
+                    assert_eq!(&r * &r, a, "sqrt({n})");
+                    squares += 1;
+                }
+                None => not += 1,
+            }
+        }
+        // Roughly half either way, which says the criterion is not answering blindly.
+        assert!(squares > 100 && not > 100, "{squares} squares, {not} not");
+
+        // A square has both roots, and they are negatives of each other.
+        let a = field.element(1234) * field.element(1234);
+        let r = sqrt(&field, &a).expect("a square has a root");
+        assert_eq!(&r * &r, a);
+        assert_eq!(&(-r.clone()) * &(-r.clone()), a);
+        assert_ne!(r.clone(), -r);
     }
 
     #[test]
