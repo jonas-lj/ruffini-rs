@@ -4,12 +4,11 @@
 //! point at infinity as the identity. The base field must not have characteristic 2
 //! or 3, which this form assumes.
 
-use crate::pow::pow;
 use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, RingOps};
 use std::ops::MulAssign;
 use num_bigint::{BigInt, Sign};
 use std::fmt;
-use std::ops::{Add, AddAssign, Neg, Sub};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 use std::sync::Arc;
 
 /// A point on a curve, or the point at infinity.
@@ -45,6 +44,7 @@ where
     pub fn new(field: F, a: F::E, b: F::E) -> Option<Arc<Self>>
     where
         F::E: for<'x> MulAssign<&'x F::E>,
+        i64: Mul<F::E, Output = F::E>,
     {
         let curve = Curve { field, a, b };
         (!curve.field.is_zero(&curve.discriminant())).then(|| Arc::new(curve))
@@ -54,11 +54,9 @@ where
     pub fn discriminant(&self) -> F::E
     where
         F::E: for<'x> MulAssign<&'x F::E>,
+        i64: Mul<F::E, Output = F::E>,
     {
-        let f = &self.field;
-        let inner =
-            f.from_integer(4) * pow(f, &self.a, 3) + f.from_integer(27) * pow(f, &self.b, 2);
-        -(f.from_integer(16) * inner)
+        -16 * (4 * self.field.pow(&self.a, 3) + 27 * self.field.pow(&self.b, 2))
     }
 
     pub fn field(&self) -> &F {
