@@ -5,10 +5,9 @@
 //! or 3, which this form assumes.
 
 use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, RingOps};
-use std::ops::MulAssign;
 use num_bigint::{BigInt, Sign};
 use std::fmt;
-use std::ops::{Add, AddAssign, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 use std::sync::Arc;
 
 /// A point on a curve, or the point at infinity.
@@ -57,6 +56,20 @@ where
         i64: Mul<F::E, Output = F::E>,
     {
         -16 * (4 * self.field.pow(&self.a, 3) + 27 * self.field.pow(&self.b, 2))
+    }
+
+    /// The j-invariant, `1728 * 4a^3 / (4a^3 + 27b^2)`.
+    ///
+    /// Two curves over the same field are isomorphic over its algebraic closure exactly
+    /// when their j-invariants agree.
+    pub fn j_invariant(&self) -> F::E
+    where
+        F::E: for<'x> MulAssign<&'x F::E> + Div<Output = F::E>,
+        i64: Mul<F::E, Output = F::E>,
+    {
+        let four_a_cubed = 4 * self.field.pow(&self.a, 3);
+        // Nonzero: `new` rejects the curves where it would vanish.
+        1728 * four_a_cubed.clone() / (four_a_cubed + 27 * self.field.pow(&self.b, 2))
     }
 
     pub fn field(&self) -> &F {
@@ -317,7 +330,7 @@ where
 mod tests {
     use super::*;
     use crate::integers::Integers;
-    use crate::structures::QuotientRing;
+    use crate::structures::{Monoid, QuotientRing};
 
     type Fp = Arc<QuotientRing<Integers>>;
 
@@ -425,6 +438,43 @@ mod tests {
             assert_eq!(c.multiply(2, &p), c.infinity());
             assert_eq!(-p.clone(), p);
         }
+    }
+
+    #[test]
+    fn the_j_invariant_is_an_isomorphism_invariant() {
+        let f = Integers::modulo(11);
+        let curve = |a: i64, b: i64| Curve::new(f.clone(), f.element(a), f.element(b));
+
+        // (a, b) -> (a u^4, b u^6) is the substitution x -> u^2 x, y -> u^3 y, so those
+        // curves are isomorphic and must agree.
+        let base = curve(1, 6).expect("nonsingular");
+        for u in 1..11i64 {
+            let (u4, u6) = (u.pow(4) % 11, u.pow(6) % 11);
+            let twisted = curve(u4, 6 * u6 % 11).expect("nonsingular");
+            assert_eq!(twisted.j_invariant(), base.j_invariant(), "at u = {u}");
+        }
+
+        // b = 0 leaves 1728 * 4a^3 / 4a^3, and a = 0 leaves a zero numerator.
+        assert_eq!(curve(1, 0).unwrap().j_invariant(), 1728 * f.identity());
+        assert_eq!(curve(0, 1).unwrap().j_invariant(), f.zero());
+
+        // Against the discriminant, which it is defined in terms of: j * disc is
+        // -1728 * (4a)^3.
+        for (a, b) in [(1i64, 6i64), (3, 2), (5, 9), (1, 0), (0, 7)] {
+            let c = curve(a, b).expect("nonsingular");
+            let four_a = 4 * f.element(a);
+            assert_eq!(
+                c.j_invariant() * c.discriminant(),
+                -1728 * f.pow(&four_a, 3),
+                "at (a, b) = ({a}, {b})"
+            );
+        }
+
+        // Curves that are not isomorphic are told apart.
+        assert_ne!(
+            curve(1, 6).unwrap().j_invariant(),
+            curve(0, 1).unwrap().j_invariant()
+        );
     }
 
     #[test]
