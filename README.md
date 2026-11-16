@@ -48,8 +48,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   multiplication.
 - **Number theory** — `number_theory::factorise`, `totient` and `multiplicative_order`,
   by trial division, sized for the small moduli that turn up as parameters.
-- **Square roots** — `finite_fields::sqrt` by Tonelli and Shanks, returning [`None`]
-  when the element is not a square, and `legendre_symbol` for the question on its own.
+- **Square roots** — `finite_fields::sqrt` by Tonelli and Shanks, over any
+  `FiniteField`, returning [`None`] when the element is not a square, and
+  `legendre_symbol` for the question on its own.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
 

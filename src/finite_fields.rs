@@ -5,14 +5,15 @@
 //! this module either looks up or finds.
 
 use crate::euclidean::extended_gcd;
-use crate::integers::Integers;
+use crate::integers::{Integer, Integers};
 use crate::number_theory::factorise;
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
 use crate::structures::{
-    CommutativeMonoid, Domain, EuclideanDomain, Monoid, QuotientRing, QuotientRingElement,
+    Domain, EuclideanDomain, Field, Monoid, QuotientRing, QuotientRingElement, RingOps,
 };
 use num_bigint::BigInt;
 use num_traits::Zero;
+use std::ops::MulAssign;
 use std::sync::Arc;
 
 /// `F_p`, the integers modulo a prime.
@@ -151,88 +152,153 @@ pub fn finite_field(p: impl Into<BigInt>, k: usize) -> ExtensionField {
     ring.quotient(modulus)
 }
 
+/// A field with finitely many elements, which knows how many and can list them.
+///
+/// The order is what square roots are stated in terms of, not the characteristic, so
+/// one implementation covers `F_p` and its extensions alike.
+pub trait FiniteField: Field
+where
+    Self::E: RingOps + Eq,
+{
+    /// How many elements the field has.
+    fn order(&self) -> BigInt;
+
+    /// The element at `index`, which must be below [`FiniteField::order`]. Any fixed
+    /// enumeration of the field will do.
+    fn element_at(&self, index: &BigInt) -> Self::E;
+}
+
+impl FiniteField for PrimeField {
+    fn order(&self) -> BigInt {
+        // The inherent method on the ring; `self.order()` would find this one again.
+        QuotientRing::order(self)
+    }
+
+    fn element_at(&self, index: &BigInt) -> Residue {
+        self.element(Integer::from(index.clone()))
+    }
+}
+
+impl FiniteField for ExtensionField {
+    fn order(&self) -> BigInt {
+        let degree = self.modulus().degree().expect("the modulus is nonzero");
+        self.base().coefficients().order().pow(degree as u32)
+    }
+
+    /// The polynomial whose coefficients are the base-`p` digits of `index`.
+    fn element_at(&self, index: &BigInt) -> QuotientRingElement<Arc<PolynomialRing<PrimeField>>> {
+        let ring = self.base();
+        let field = ring.coefficients();
+        let p = field.order();
+        let degree = self.modulus().degree().expect("the modulus is nonzero");
+
+        let mut remaining = index.clone();
+        let coefficients: Vec<_> = (0..degree)
+            .map(|_| {
+                let digit = field.element(Integer::from(&remaining % &p));
+                remaining /= &p;
+                digit
+            })
+            .collect();
+        self.element(ring.element(coefficients))
+    }
+}
+
 /// The Legendre symbol of `a`: `0` when `a` is zero, `1` when it is a nonzero square,
 /// and `-1` when it is not a square.
 ///
-/// Euler's criterion computes it as `a^((p-1)/2)`.
-///
 /// # Panics
-/// If the characteristic is two, where every element is a square and the symbol says
+/// If the field has even order, where every element is a square and the symbol says
 /// nothing.
-pub fn legendre_symbol(field: &PrimeField, a: &Residue) -> i8 {
-    let p = field.order();
+pub fn legendre_symbol<F>(field: &F, a: &F::E) -> i8
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let q = field.order();
     assert!(
-        p != BigInt::from(2),
-        "the Legendre symbol needs an odd characteristic"
+        !(&q % 2u32).is_zero(),
+        "the Legendre symbol needs an odd order"
     );
     if field.is_zero(a) {
         return 0;
     }
-    if field.pow(a, (&p - 1u32) / 2u32) == field.identity() {
+    // Euler's criterion: for nonzero a, a^((q-1)/2) is 1 if a is a square and -1 if not.
+    if field.pow(a, (&q - 1u32) / 2u32) == field.identity() {
         1
     } else {
         -1
     }
 }
 
-/// A square root of `a` in `F_p`, or [`None`] when `a` is not a square.
-///
-/// Tonelli and Shanks: write `p - 1 = q * 2^s` with `q` odd, and walk `a^q` down the
-/// subgroup of order `2^s` until it reaches one, correcting the root at each step.
+/// A square root of `a`, or [`None`] when `a` is not a square.
 ///
 /// Both roots are `r` and `-r`; this returns whichever the algorithm reaches.
 ///
-/// # Panics
-/// If the modulus is not prime, where the search for a non-residue need not terminate.
-pub fn sqrt(field: &PrimeField, a: &Residue) -> Option<Residue> {
-    let p = field.order();
-    // Squaring is the identity in characteristic two.
-    if p == BigInt::from(2) {
-        return Some(a.clone());
+/// `F` must really be a field. A quotient by a composite modulus is accepted by the
+/// type and the answer is then unspecified: `Z/15` reports that 4 is not a square,
+/// though `2^2 = 4` there. The assertions below catch some such cases but not all.
+pub fn sqrt<F>(field: &F, a: &F::E) -> Option<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let q = field.order();
+    // Even order means characteristic two, where squaring is the Frobenius map and so a
+    // bijection. Its inverse is a^(q/2), since a^q = a for every element.
+    if (&q % 2u32).is_zero() {
+        return Some(field.pow(a, &q / 2u32));
     }
+
     match legendre_symbol(field, a) {
         0 => return Some(field.zero()),
         -1 => return None,
         _ => {}
     }
 
+    // Tonelli and Shanks: write q - 1 = m * 2^s with m odd, then walk a^m down the
+    // subgroup of order 2^s to one, correcting the root at each step.
     let one = field.identity();
-    let (mut q, mut s) = (&p - 1u32, 0u32);
-    while (&q % 2u32).is_zero() {
-        q /= 2u32;
+    let (mut odd, mut s) = (&q - 1u32, 0u32);
+    while (&odd % 2u32).is_zero() {
+        odd /= 2u32;
         s += 1;
     }
-    // p = 3 mod 4 leaves the odd part one halving away, so no search is needed.
+    // q = 3 mod 4 leaves the odd part one halving away, so no search is needed.
     if s == 1 {
-        return Some(field.pow(a, (&p + 1u32) / 4u32));
+        return Some(field.pow(a, (&q + 1u32) / 4u32));
     }
 
-    let mut z = field.element(2);
-    while legendre_symbol(field, &z) != -1 {
+    let mut index = BigInt::from(2);
+    let z = loop {
         assert!(
-            z != field.zero(),
-            "no non-residue found: the modulus is not prime"
+            index < q,
+            "no non-residue found: the order is not a field's"
         );
-        z = z + 1;
-    }
+        let candidate = field.element_at(&index);
+        if legendre_symbol(field, &candidate) == -1 {
+            break candidate;
+        }
+        index += 1u32;
+    };
 
     let mut m = s;
-    let mut c = field.pow(&z, q.clone());
-    let mut t = field.pow(a, q.clone());
-    let mut r = field.pow(a, (&q + 1u32) / 2u32);
+    let mut c = field.pow(&z, odd.clone());
+    let mut t = field.pow(a, odd.clone());
+    let mut r = field.pow(a, (&odd + 1u32) / 2u32);
     while t != one {
         // The least i with t^(2^i) = 1, which is below m while t is not one.
         let mut i = 0;
         let mut square = t.clone();
         while square != one {
-            square = &square * &square;
+            square = square.clone() * square.clone();
             i += 1;
         }
         // t has order 2^i with i < m, so m falls every round and the loop ends.
-        assert!(i < m, "the modulus is not prime");
+        assert!(i < m, "the order is not a field's");
         let b = field.pow(&c, BigInt::from(2).pow(m - i - 1));
         m = i;
-        c = &b * &b;
+        c = b.clone() * b.clone();
         t *= c.clone();
         r *= b;
     }
@@ -393,8 +459,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "odd characteristic")]
-    fn the_legendre_symbol_needs_an_odd_characteristic() {
+    #[should_panic(expected = "odd order")]
+    fn the_legendre_symbol_needs_an_odd_order() {
         let f2 = Integers::modulo(2);
         legendre_symbol(&f2, &f2.identity());
     }
@@ -430,6 +496,65 @@ mod tests {
             // Zero, and half the nonzero elements.
             let expected = if prime == 2 { 2 } else { 1 + (prime - 1) / 2 };
             assert_eq!(roots, expected, "in F_{prime}");
+        }
+    }
+
+    /// Every element of `field`, by walking its own enumeration.
+    fn elements<F>(field: &F) -> Vec<F::E>
+    where
+        F: FiniteField,
+        F::E: RingOps + Eq,
+    {
+        let order: u32 = field.order().try_into().expect("a small field");
+        (0..order)
+            .map(|i| field.element_at(&BigInt::from(i)))
+            .collect()
+    }
+
+    /// Checks `sqrt` against the squares of the whole field.
+    fn roots_agree_with_squaring<F>(field: &F, name: &str)
+    where
+        F: FiniteField,
+        F::E: RingOps + Eq + std::fmt::Debug + for<'x> MulAssign<&'x F::E>,
+    {
+        let all = elements(field);
+        // The enumeration has to be a bijection for that to mean anything.
+        for (i, a) in all.iter().enumerate() {
+            assert!(!all[i + 1..].contains(a), "{name} lists an element twice");
+        }
+        let squares: Vec<F::E> = all.iter().map(|x| x.clone() * x.clone()).collect();
+
+        for a in &all {
+            match sqrt(field, a) {
+                Some(r) => assert_eq!(r.clone() * r, *a, "{name}"),
+                None => assert!(!squares.contains(a), "{name} missed a root"),
+            }
+        }
+    }
+
+    #[test]
+    fn square_roots_in_extension_fields() {
+        // F_9 and F_25: q - 1 is divisible by 8, so neither shortcut applies and the
+        // main loop always runs - which is why the algorithm had to stop assuming F_p.
+        for (p, k) in [(3u32, 2usize), (5, 2), (3, 3)] {
+            let field = finite_field(p, k);
+            assert_eq!(field.order(), BigInt::from(p).pow(k as u32));
+            roots_agree_with_squaring(&field, &format!("F_{p}^{k}"));
+        }
+
+        // Characteristic two: squaring is a bijection, so every element has exactly one
+        // root and none is ever rejected.
+        for k in [1usize, 2, 3, 4] {
+            let field = finite_field(2, k);
+            for a in elements(&field) {
+                let r = sqrt(&field, &a).expect("every element is a square");
+                assert_eq!(r.clone() * r, a, "F_2^{k}");
+            }
+        }
+
+        // And the prime fields still go through the same code.
+        for p in [3u32, 7, 13, 17] {
+            roots_agree_with_squaring(&Integers::modulo(p), &format!("F_{p}"));
         }
     }
 
