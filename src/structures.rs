@@ -79,6 +79,16 @@ where
 {
     /// Returns the multiplicative identity (`1`).
     fn identity(&self) -> Self::E;
+
+    /// `base^exp`, by square-and-multiply. See [`crate::pow::pow`], which this
+    /// forwards to.
+    fn pow<T: Into<BigInt>>(&self, base: &Self::E, exp: T) -> Self::E
+    where
+        Self: Sized,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::pow::pow(self, base, exp)
+    }
 }
 
 /// A domain whose elements form a commutative monoid under addition.
