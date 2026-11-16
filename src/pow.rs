@@ -89,6 +89,22 @@ mod tests {
     }
 
     #[test]
+    fn the_monoid_method_forwards_to_the_function() {
+        let z = Integers::default();
+        let f17 = Integers::modulo(17);
+        for exp in [0u32, 1, 7, 100] {
+            assert_eq!(
+                z.pow(&Integer::from(3), exp),
+                pow(&z, &Integer::from(3), exp)
+            );
+            assert_eq!(
+                f17.pow(&f17.element(2), exp),
+                pow(&f17, &f17.element(2), exp)
+            );
+        }
+    }
+
+    #[test]
     #[should_panic(expected = "negative exponent")]
     fn rejects_a_negative_exponent() {
         let z = Integers::default();
