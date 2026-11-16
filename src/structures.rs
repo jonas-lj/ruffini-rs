@@ -7,7 +7,7 @@
 
 use num_bigint::{BigInt, Sign};
 use std::fmt;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 use std::sync::Arc;
 
 /// The ring operations, bundled so the element bound can be written once per `where`
@@ -377,6 +377,25 @@ macro_rules! quotient_ring_ops {
     )*};
 }
 quotient_ring_ops!(Add, add; Sub, sub; Mul, mul);
+
+/// Division, which a quotient ring can only do by a unit.
+impl<R> Div for QuotientRingElement<R>
+where
+    R: EuclideanDomain,
+    R::E: RingOps + DivRem + Eq,
+{
+    type Output = Self;
+
+    /// # Panics
+    /// If `rhs` has no inverse: zero, or any zero divisor when the modulus is not
+    /// prime. [`Field::invert`] asks the same question without panicking.
+    // Dividing is multiplying by the inverse, which is what clippy is warning about.
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn div(self, rhs: Self) -> Self {
+        let inverse = self.ring.invert(&rhs).expect("division by a non-unit");
+        self * inverse
+    }
+}
 
 forward_ref_binops!(
     QuotientRingElement<R>,

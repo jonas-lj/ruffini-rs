@@ -216,6 +216,38 @@ mod tests {
     }
 
     #[test]
+    fn division_in_a_field() {
+        let f7 = Integers::modulo(7);
+        // 3 / 5 = 3 * 5^-1 = 3 * 3 = 2, since 5 * 3 = 15 = 1.
+        assert_eq!(f7.element(3) / f7.element(5), f7.element(2));
+        for a in 0..7 {
+            for b in 1..7 {
+                let q = f7.element(a) / f7.element(b);
+                assert_eq!(q * f7.element(b), f7.element(a), "{a} / {b}");
+            }
+        }
+
+        let q = Integers::rationals();
+        assert_eq!(q.fraction(1, 2) / q.fraction(3, 4), q.fraction(2, 3));
+        assert_eq!(q.element(5) / q.element(5), q.identity());
+    }
+
+    #[test]
+    #[should_panic(expected = "non-unit")]
+    fn dividing_by_zero_in_a_quotient_panics() {
+        let f7 = Integers::modulo(7);
+        let _ = f7.element(1) / f7.zero();
+    }
+
+    #[test]
+    #[should_panic(expected = "non-unit")]
+    fn dividing_by_a_zero_divisor_panics() {
+        // Z/6 is not a field, and 2 has no inverse there.
+        let z6 = Integers::modulo(6);
+        let _ = z6.element(1) / z6.element(2);
+    }
+
+    #[test]
     fn prime_field_f7() {
         let f7 = Integers::modulo(7);
 

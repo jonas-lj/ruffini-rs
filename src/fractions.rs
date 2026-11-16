@@ -10,7 +10,7 @@ use crate::structures::{
 };
 use num_bigint::BigInt;
 use std::fmt;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Sub};
 use std::sync::Arc;
 
 /// The field of fractions over `R`.
@@ -194,6 +194,21 @@ where
     type Output = Fraction<R>;
     fn mul(self, rhs: Self) -> Fraction<R> {
         (&self).mul(&rhs)
+    }
+}
+
+/// Division, which is total away from zero.
+impl<R> Div for Fraction<R>
+where
+    R: EuclideanDomain,
+    R::E: RingOps + DivRem + Eq,
+{
+    type Output = Self;
+
+    /// # Panics
+    /// If `rhs` is zero.
+    fn div(self, rhs: Self) -> Self {
+        self.div_rem(&rhs).0
     }
 }
 
