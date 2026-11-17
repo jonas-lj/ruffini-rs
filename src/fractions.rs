@@ -69,9 +69,9 @@ where
             "zero denominator in a fraction"
         );
 
-        // extended_gcd canonicalises the gcd itself, so this also fixes the sign of a
-        // fraction whose numerator and denominator share no factor.
-        let (gcd, _, _) = domain.extended_gcd(numerator.clone(), denominator.clone());
+        // The gcd is canonicalised, so this also fixes the sign of a fraction whose
+        // numerator and denominator share no factor.
+        let gcd = domain.gcd(numerator.clone(), denominator.clone());
         let numerator = numerator.div_rem(&gcd).0;
         let denominator = denominator.div_rem(&gcd).0;
 

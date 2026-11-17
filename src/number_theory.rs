@@ -5,6 +5,8 @@
 //! parameters - the `r` of a primality test, the order of a small group - rather than
 //! the large ones a factoring attack would aim at.
 
+use crate::integers::{Integer, Integers};
+use crate::structures::EuclideanDomain;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
@@ -73,13 +75,14 @@ pub fn multiplicative_order(a: impl Into<BigInt>, n: impl Into<BigInt>) -> Optio
     Some(order)
 }
 
-/// The non-negative greatest common divisor, by the Euclidean algorithm.
-pub fn gcd(mut a: BigInt, mut b: BigInt) -> BigInt {
-    while !b.is_zero() {
-        let r = a % &b;
-        a = std::mem::replace(&mut b, r);
-    }
-    a.abs()
+/// The non-negative greatest common divisor.
+///
+/// The Euclidean algorithm itself is [`crate::euclidean::gcd`], over any Euclidean
+/// domain; this is it over the integers, without the wrapping at the call site.
+pub fn gcd(a: impl Into<BigInt>, b: impl Into<BigInt>) -> BigInt {
+    Integers::default()
+        .gcd(Integer::from(a.into()), Integer::from(b.into()))
+        .into()
 }
 
 #[cfg(test)]

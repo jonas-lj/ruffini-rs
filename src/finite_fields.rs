@@ -4,7 +4,6 @@
 //! modulus. What an extension needs is an irreducible polynomial to quotient by, which
 //! this module either looks up or finds.
 
-use crate::euclidean::extended_gcd;
 use crate::integers::{Integer, Integers};
 use crate::number_theory::{factorise, gcd};
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
@@ -384,8 +383,7 @@ pub fn is_irreducible(ring: &Arc<PolynomialRing<PrimeField>>, f: &Polynomial<Pri
         // The gcd needs the Euclidean domain, not its quotient. A zero difference means
         // x already lies in the subfield, and gcd(0, f) is f, so it fails the test too.
         let difference = power.representative().clone() - ring.indeterminate();
-        let (gcd, _, _) = extended_gcd(&ring.clone(), difference, f.clone());
-        if gcd != ring.identity() {
+        if ring.gcd(difference, f.clone()) != ring.identity() {
             return false;
         }
     }
