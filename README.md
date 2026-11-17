@@ -53,6 +53,8 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   `is_kth_power` for the questions on their own.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
+- **Point counting** — `curve.order()` over a finite field, by summing the quadratic
+  character of `x³ + ax + b`, with `trace_of_frobenius` for `q + 1 - #E`.
 
 ### Notation
 

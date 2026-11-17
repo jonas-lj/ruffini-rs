@@ -65,6 +65,35 @@ where
     }
 }
 
+impl<F> Curve<F>
+where
+    F: FiniteField + Clone,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    /// The number of points, the point at infinity included.
+    ///
+    /// `x` contributes `1 + chi(x^3 + ax + b)` points for the quadratic character
+    /// `chi`, so `#E(F_q) = q + 1 + sum_x chi(x^3 + ax + b)`. That is one
+    /// exponentiation per field element, so it is for small fields.
+    pub fn order(&self) -> BigInt {
+        let field = &self.field;
+        let q = field.order();
+        let mut count = &q + 1u32;
+        let mut index = BigInt::from(0u32);
+        while index < q {
+            let x = field.element_at(&index);
+            count += field.legendre_symbol(&self.evaluate(&x));
+            index += 1u32;
+        }
+        count
+    }
+
+    /// The trace of Frobenius, `q + 1 - #E(F_q)`, which Hasse bounds by `2*sqrt(q)`.
+    pub fn trace_of_frobenius(&self) -> BigInt {
+        self.field.order() + 1u32 - self.order()
+    }
+}
+
 /// A point on a curve, or the point at infinity.
 #[derive(Debug)]
 pub struct Point<F>
@@ -136,11 +165,14 @@ where
         (&self.a, &self.b)
     }
 
+    /// `x^3 + ax + b`, the right-hand side of the curve equation.
+    pub fn evaluate(&self, x: &F::E) -> F::E {
+        x.clone() * x.clone() * x.clone() + self.a.clone() * x.clone() + self.b.clone()
+    }
+
     /// Whether `(x, y)` satisfies the curve equation.
     pub fn contains(&self, x: &F::E, y: &F::E) -> bool {
-        let lhs = y.clone() * y.clone();
-        let rhs = x.clone() * x.clone() * x.clone() + self.a.clone() * x.clone() + self.b.clone();
-        lhs == rhs
+        y.clone() * y.clone() == self.evaluate(x)
     }
 
     /// The point `(x, y)`, or [`None`] if it is not on the curve.
@@ -542,6 +574,106 @@ mod tests {
                         "F_{prime}: ({a}, {b}) against ({c}, {d})"
                     );
                 }
+            }
+        }
+    }
+
+    /// The order found by trying every pair of coordinates, with no character sums.
+    fn counted_by_hand<F>(c: &Curve<F>) -> BigInt
+    where
+        F: FiniteField + Clone,
+        F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+    {
+        let f = c.field();
+        let q = f.order();
+        let mut count = BigInt::from(1u32);
+        let mut i = BigInt::from(0u32);
+        while i < q {
+            let x = f.element_at(&i);
+            let mut j = BigInt::from(0u32);
+            while j < q {
+                if c.contains(&x, &f.element_at(&j)) {
+                    count += 1u32;
+                }
+                j += 1u32;
+            }
+            i += 1u32;
+        }
+        count
+    }
+
+    #[test]
+    fn counting_agrees_with_trying_every_pair() {
+        for prime in [5u32, 7, 11, 13] {
+            let f = Integers::modulo(prime);
+            for c in all_curves(&f) {
+                let (a, b) = c.coefficients();
+                assert_eq!(
+                    c.order(),
+                    counted_by_hand(&c),
+                    "F_{prime}: y^2 = x^3 + {a}x + {b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn counting_agrees_with_trying_every_pair_over_an_extension() {
+        // F_25, where the field is not Z/q and x runs through element_at.
+        let f = crate::finite_fields::finite_field(5, 2);
+        for (a, b) in [(1u32, 1u32), (0, 2), (3, 0), (2, 4)] {
+            let c = Curve::new(f.clone(), f.element_at(&a.into()), f.element_at(&b.into()))
+                .expect("nonsingular");
+            assert_eq!(c.order(), counted_by_hand(&c), "at ({a}, {b})");
+        }
+    }
+
+    #[test]
+    fn the_order_annihilates_every_point() {
+        // Lagrange, which the counting argument knows nothing about.
+        let (f, c) = curve();
+        let order = c.order();
+        assert_eq!(order, BigInt::from(13));
+        for p in all_points(&f, &c) {
+            assert_eq!(c.multiply(order.clone(), &p), c.infinity(), "{order} * {p}");
+        }
+    }
+
+    #[test]
+    fn the_trace_stays_within_hasse_s_bound() {
+        for prime in [5u32, 7, 11, 13, 17, 19] {
+            let f = Integers::modulo(prime);
+            for c in all_curves(&f) {
+                let t = c.trace_of_frobenius();
+                let (a, b) = c.coefficients();
+                assert!(
+                    &t * &t <= BigInt::from(4 * prime),
+                    "F_{prime}: y^2 = x^3 + {a}x + {b} has t = {t}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_quadratic_twist_has_the_opposite_trace() {
+        // Scaling by (d^2, d^3) for a non-square d gives the twist, whose points are
+        // the x with no y here, so the two counts add to 2q + 2.
+        for prime in [7u32, 11, 13, 17] {
+            let f = Integers::modulo(prime);
+            let d = (2..prime)
+                .map(|n| f.element(n))
+                .find(|n| f.legendre_symbol(n) == -1)
+                .expect("some non-square");
+            let (d2, d3) = (f.pow(&d, 2), f.pow(&d, 3));
+            for c in all_curves(&f) {
+                let (a, b) = c.coefficients();
+                let twist = Curve::new(f.clone(), d2.clone() * a.clone(), d3.clone() * b.clone())
+                    .expect("scaling keeps the discriminant nonzero");
+                assert_eq!(
+                    c.trace_of_frobenius(),
+                    -twist.trace_of_frobenius(),
+                    "F_{prime}: y^2 = x^3 + {a}x + {b}"
+                );
             }
         }
     }
