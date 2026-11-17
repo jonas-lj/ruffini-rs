@@ -23,7 +23,7 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **`MatrixRing`** — `ring.matrices(n)` is the `n x n` matrices over `R`, itself a ring;
   `Matrix` on its own is any shape.
 - **`Curve`** — elliptic curves `y² = x³ + ax + b` over any field, whose points form an
-  additive group.
+  additive group; over a finite one, `is_isomorphic` tells a curve from its twists.
 - **`ConstructiveReals`** — computable reals, held as expression trees and evaluated to
   whatever precision is asked of them.
 
@@ -48,9 +48,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   multiplication.
 - **Number theory** — `number_theory::factorise`, `totient` and `multiplicative_order`,
   by trial division, sized for the small moduli that turn up as parameters.
-- **Square roots** — `finite_fields::sqrt` by Tonelli and Shanks, over any
-  `FiniteField`, returning [`None`] when the element is not a square, and
-  `legendre_symbol` for the question on its own.
+- **Square roots** — `field.sqrt(&x)` by Tonelli and Shanks, over any `FiniteField`,
+  returning [`None`] when the element is not a square, with `legendre_symbol` and
+  `is_kth_power` for the questions on their own.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
 

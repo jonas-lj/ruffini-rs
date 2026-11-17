@@ -6,7 +6,7 @@
 
 use crate::euclidean::extended_gcd;
 use crate::integers::{Integer, Integers};
-use crate::number_theory::factorise;
+use crate::number_theory::{factorise, gcd};
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
 use crate::structures::{
     Domain, EuclideanDomain, Field, Monoid, QuotientRing, QuotientRingElement, RingOps,
@@ -166,6 +166,33 @@ where
     /// The element at `index`, which must be below [`FiniteField::order`]. Any fixed
     /// enumeration of the field will do.
     fn element_at(&self, index: &BigInt) -> Self::E;
+
+    /// Whether `x` is a `k`-th power. See [`is_kth_power`], which this forwards to.
+    fn is_kth_power(&self, x: &Self::E, k: u32) -> bool
+    where
+        Self: Sized,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::finite_fields::is_kth_power(self, x, k)
+    }
+
+    /// The Legendre symbol of `x`. See [`legendre_symbol`], which this forwards to.
+    fn legendre_symbol(&self, x: &Self::E) -> i8
+    where
+        Self: Sized,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::finite_fields::legendre_symbol(self, x)
+    }
+
+    /// A square root of `x`. See [`sqrt`], which this forwards to.
+    fn sqrt(&self, x: &Self::E) -> Option<Self::E>
+    where
+        Self: Sized,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::finite_fields::sqrt(self, x)
+    }
 }
 
 impl FiniteField for PrimeField {
@@ -229,6 +256,27 @@ where
     } else {
         -1
     }
+}
+
+/// Whether `x` is a `k`-th power in the field.
+///
+/// No root is computed: the `k`-th powers are the kernel of raising to
+/// `(q-1)/gcd(k, q-1)`, so one exponentiation answers it. Zero is a `k`-th power.
+///
+/// # Panics
+/// If `k` is zero.
+pub fn is_kth_power<F>(field: &F, x: &F::E, k: u32) -> bool
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    assert!(k > 0, "a zeroth power is not a useful question");
+    if field.is_zero(x) {
+        return true;
+    }
+    let order = field.order() - 1u32;
+    let exponent = &order / gcd(BigInt::from(k), order.clone());
+    field.pow(x, exponent) == field.identity()
 }
 
 /// A square root of `a`, or [`None`] when `a` is not a square.
@@ -427,7 +475,7 @@ mod tests {
 
             for n in 0..prime {
                 let a = field.element(n);
-                let symbol = legendre_symbol(&field, &a);
+                let symbol = field.legendre_symbol(&a);
                 let expected = if field.is_zero(&a) {
                     0
                 } else if squares.contains(&a) {
@@ -443,8 +491,8 @@ mod tests {
                 for n in 0..prime {
                     let (x, y) = (field.element(m), field.element(n));
                     assert_eq!(
-                        legendre_symbol(&field, &(&x * &y)),
-                        legendre_symbol(&field, &x) * legendre_symbol(&field, &y),
+                        field.legendre_symbol(&(&x * &y)),
+                        field.legendre_symbol(&x) * field.legendre_symbol(&y),
                         "({m} * {n} / {prime})"
                     );
                 }
@@ -453,16 +501,16 @@ mod tests {
 
         // 3^2 = 2 mod 7, while 3 is not a square there.
         let f7 = Integers::modulo(7);
-        assert_eq!(legendre_symbol(&f7, &f7.element(2)), 1);
-        assert_eq!(legendre_symbol(&f7, &f7.element(3)), -1);
-        assert_eq!(legendre_symbol(&f7, &f7.zero()), 0);
+        assert_eq!(f7.legendre_symbol(&f7.element(2)), 1);
+        assert_eq!(f7.legendre_symbol(&f7.element(3)), -1);
+        assert_eq!(f7.legendre_symbol(&f7.zero()), 0);
     }
 
     #[test]
     #[should_panic(expected = "odd order")]
     fn the_legendre_symbol_needs_an_odd_order() {
         let f2 = Integers::modulo(2);
-        legendre_symbol(&f2, &f2.identity());
+        f2.legendre_symbol(&f2.identity());
     }
 
     #[test]
@@ -476,7 +524,7 @@ mod tests {
             let mut roots = 0;
             for n in 0..prime {
                 let a = field.element(n);
-                match sqrt(&field, &a) {
+                match field.sqrt(&a) {
                     Some(r) => {
                         assert_eq!(&r * &r, a, "sqrt({n}) in F_{prime}");
                         roots += 1;
@@ -547,7 +595,7 @@ mod tests {
         for k in [1usize, 2, 3, 4] {
             let field = finite_field(2, k);
             for a in elements(&field) {
-                let r = sqrt(&field, &a).expect("every element is a square");
+                let r = field.sqrt(&a).expect("every element is a square");
                 assert_eq!(r.clone() * r, a, "F_2^{k}");
             }
         }
@@ -569,7 +617,7 @@ mod tests {
         let (mut squares, mut not) = (0, 0);
         for n in (0..prime).step_by(37) {
             let a = field.element(n);
-            match sqrt(&field, &a) {
+            match field.sqrt(&a) {
                 Some(r) => {
                     assert_eq!(&r * &r, a, "sqrt({n})");
                     squares += 1;
@@ -582,7 +630,7 @@ mod tests {
 
         // A square has both roots, and they are negatives of each other.
         let a = field.element(1234) * field.element(1234);
-        let r = sqrt(&field, &a).expect("a square has a root");
+        let r = field.sqrt(&a).expect("a square has a root");
         assert_eq!(&r * &r, a);
         assert_eq!(&(-r.clone()) * &(-r.clone()), a);
         assert_ne!(r.clone(), -r);
