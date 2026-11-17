@@ -162,6 +162,9 @@ where
     /// How many elements the field has.
     fn order(&self) -> BigInt;
 
+    /// The characteristic `p`, where the order is a power of it.
+    fn characteristic(&self) -> BigInt;
+
     /// The element at `index`, which must be below [`FiniteField::order`]. Any fixed
     /// enumeration of the field will do.
     fn element_at(&self, index: &BigInt) -> Self::E;
@@ -200,6 +203,11 @@ impl FiniteField for PrimeField {
         QuotientRing::order(self)
     }
 
+    /// The modulus, which this type assumes is prime.
+    fn characteristic(&self) -> BigInt {
+        QuotientRing::order(self)
+    }
+
     fn element_at(&self, index: &BigInt) -> Residue {
         self.element(Integer::from(index.clone()))
     }
@@ -208,7 +216,12 @@ impl FiniteField for PrimeField {
 impl FiniteField for ExtensionField {
     fn order(&self) -> BigInt {
         let degree = self.modulus().degree().expect("the modulus is nonzero");
-        self.base().coefficients().order().pow(degree as u32)
+        self.characteristic().pow(degree as u32)
+    }
+
+    /// The characteristic of the coefficient field, which the extension shares.
+    fn characteristic(&self) -> BigInt {
+        self.base().coefficients().order()
     }
 
     /// The polynomial whose coefficients are the base-`p` digits of `index`.
@@ -744,6 +757,15 @@ mod tests {
             let one = field.identity();
             let sum = (0..p).fold(field.zero(), |acc, _| acc + one.clone());
             assert!(field.is_zero(&sum), "F_{p}^{k}");
+            assert_eq!(field.characteristic(), BigInt::from(p), "F_{p}^{k}");
+            assert_eq!(field.order(), BigInt::from(p).pow(k as u32), "F_{p}^{k}");
+        }
+
+        // A prime field is its own characteristic.
+        for p in [2u32, 7, 101] {
+            let field = Integers::modulo(p);
+            assert_eq!(field.characteristic(), BigInt::from(p));
+            assert_eq!(FiniteField::order(&field), BigInt::from(p));
         }
     }
 }

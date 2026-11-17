@@ -54,7 +54,8 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
 - **Point counting** — `curve.order()` over a finite field, by summing the quadratic
-  character of `x³ + ax + b`, with `trace_of_frobenius` for `q + 1 - #E`.
+  character of `x³ + ax + b`, with `trace_of_frobenius` for `q + 1 - #E` and
+  `is_supersingular`.
 
 ### Notation
 
