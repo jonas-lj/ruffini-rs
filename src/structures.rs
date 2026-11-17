@@ -204,6 +204,15 @@ where
         crate::fractions::FractionField::new(self.clone())
     }
 
+    /// The canonical greatest common divisor. See [`crate::euclidean::gcd`], which
+    /// this forwards to.
+    fn gcd(&self, a: Self::E, b: Self::E) -> Self::E
+    where
+        Self: Sized,
+    {
+        crate::euclidean::gcd(self, a, b)
+    }
+
     /// Returns `(gcd, x, y)` with `x * a + y * b == gcd`. See
     /// [`crate::euclidean::extended_gcd`], which this forwards to.
     fn extended_gcd(&self, a: Self::E, b: Self::E) -> (Self::E, Self::E, Self::E)
