@@ -92,6 +92,13 @@ where
     pub fn trace_of_frobenius(&self) -> BigInt {
         self.field.order() + 1u32 - self.order()
     }
+
+    /// Whether the curve is supersingular, that is whether the characteristic divides
+    /// the trace. Over `F_p` Hasse's bound leaves only `t = 0`, but over an extension
+    /// the trace can be a nonzero multiple of `p`.
+    pub fn is_supersingular(&self) -> bool {
+        self.trace_of_frobenius() % self.field.characteristic() == BigInt::from(0u32)
+    }
 }
 
 /// A point on a curve, or the point at infinity.
@@ -659,6 +666,43 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_classic_supersingular_families() {
+        for prime in [5u32, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43] {
+            let f = Integers::modulo(prime);
+            let curve = |a: i64, b: i64| {
+                Curve::new(f.clone(), f.element(a), f.element(b)).expect("nonsingular")
+            };
+            assert_eq!(
+                curve(1, 0).is_supersingular(),
+                prime % 4 == 3,
+                "y^2 = x^3 + x over F_{prime}"
+            );
+            assert_eq!(
+                curve(0, 1).is_supersingular(),
+                prime % 3 == 2,
+                "y^2 = x^3 + 1 over F_{prime}"
+            );
+        }
+    }
+
+    #[test]
+    fn supersingularity_outlives_a_base_change_that_moves_the_trace() {
+        // y^2 = x^3 + x over F_7 is supersingular with t = 0. Over F_49 the trace is
+        // t^2 - 2p = -14, so the test has to be divisibility rather than vanishing.
+        let f = crate::finite_fields::finite_field(7, 2);
+        let c = Curve::new(f.clone(), f.identity(), f.zero()).expect("nonsingular");
+        assert_eq!(c.order(), BigInt::from(64));
+        assert_eq!(c.trace_of_frobenius(), BigInt::from(-14));
+        assert!(c.is_supersingular());
+
+        let base = Integers::modulo(7);
+        let over_f7 =
+            Curve::new(base.clone(), base.element(1), base.element(0)).expect("nonsingular");
+        assert_eq!(over_f7.trace_of_frobenius(), BigInt::from(0));
+        assert!(over_f7.is_supersingular());
     }
 
     #[test]
