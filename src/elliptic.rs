@@ -231,11 +231,8 @@ where
         }
     }
 
-    /// The division polynomials `g_0` up to `g_n`.
-    ///
-    /// `psi_n` is `g_n` for odd `n` and `y * g_n` for even `n`, which keeps every one
-    /// of them in `F[x]`: `y` appears only to an even power once the recurrences are
-    /// rewritten in terms of `g`, except for the single factor the convention absorbs.
+    /// The division polynomials `g_0` up to `g_n`, where `psi_n` is `g_n` for odd `n`
+    /// and `y * g_n` for even `n`, which puts every one of them in `F[x]`.
     ///
     /// Each is built from its predecessors, so this is what asking for one costs.
     pub fn division_polynomials(&self, n: usize) -> Vec<Polynomial<F>> {
@@ -1003,9 +1000,10 @@ mod tests {
     #[test]
     fn the_x_map_agrees_with_the_group_law() {
         let f = Integers::modulo(11);
-        // 13 points, prime order, so no point is n-torsion below 13.
+        // 13 points of prime order, so for n <= 7 nothing is n-torsion and psi_n^2
+        // vanishes nowhere: this curve exercises only the affine branch.
         check_the_x_map(&curve().1, 7);
-        // Two points of order two, so psi_2^2 does vanish somewhere.
+        // x^3 - x splits, so three points of order two and psi_n^2 does vanish.
         check_the_x_map(
             &Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular"),
             6,
