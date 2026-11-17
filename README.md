@@ -59,6 +59,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Division polynomials** — `curve.division_polynomials(n)`, held as `gₙ` with
   `ψₙ = gₙ` for odd `n` and `y·gₙ` for even, so they stay in `F[x]`;
   `multiplication_map(n)` gives multiplication by `n` on `x` as `φₙ/ψₙ²`.
+- **Isogenies** — `curve.isogeny(&generator, order)` by Vélu's formulas: the separable
+  isogeny with the given kernel, with its codomain, `evaluate` on points, and `x_map`
+  for `r₁` in `F(x)`.
 
 ### Notation
 
