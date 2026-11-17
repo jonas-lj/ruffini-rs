@@ -631,11 +631,18 @@ mod tests {
     #[test]
     fn the_order_annihilates_every_point() {
         // Lagrange, which the counting argument knows nothing about.
-        let (f, c) = curve();
-        let order = c.order();
-        assert_eq!(order, BigInt::from(13));
-        for p in all_points(&f, &c) {
-            assert_eq!(c.multiply(order.clone(), &p), c.infinity(), "{order} * {p}");
+        let f = Integers::modulo(11);
+        assert_eq!(curve().1.order(), BigInt::from(13), "the worked example");
+        for c in all_curves(&f) {
+            let order = c.order();
+            let (a, b) = c.coefficients();
+            for p in all_points(&f, &c) {
+                assert_eq!(
+                    c.multiply(order.clone(), &p),
+                    c.infinity(),
+                    "{order} * {p} on y^2 = x^3 + {a}x + {b}"
+                );
+            }
         }
     }
 
@@ -656,8 +663,9 @@ mod tests {
 
     #[test]
     fn a_quadratic_twist_has_the_opposite_trace() {
-        // Scaling by (d^2, d^3) for a non-square d gives the twist, whose points are
-        // the x with no y here, so the two counts add to 2q + 2.
+        // Scaling by (d^2, d^3) for a non-square d gives the twist, where x -> dx
+        // sends the cubic to d^3 f(x). So x contributes 1 + chi(f(x)) points here and
+        // 1 - chi(f(x)) there, two in all, and the counts add to 2q + 2.
         for prime in [7u32, 11, 13, 17] {
             let f = Integers::modulo(prime);
             let d = (2..prime)
