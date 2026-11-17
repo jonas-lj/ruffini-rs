@@ -124,8 +124,6 @@ where
     field: F,
     a: F::E,
     b: F::E,
-    /// One handle for every polynomial the curve hands out, so they can be combined
-    /// with each other and with anything else built from it.
     polynomials: Arc<PolynomialRing<F>>,
 }
 
@@ -305,8 +303,8 @@ where
         let f = self.cubic();
         let g = self.division_polynomials(n + 1);
 
-        // psi_{n+1} psi_{n-1} picks up the y^2 that psi_n^2 does not, and the other
-        // way round, since n and n +- 1 have opposite parities.
+        // Exactly one of the two products carries an f, n and n +- 1 being of
+        // opposite parity.
         let (psi_squared, cross) = if n % 2 == 1 {
             (
                 g[n].clone() * g[n].clone(),
