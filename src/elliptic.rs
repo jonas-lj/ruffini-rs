@@ -294,13 +294,13 @@ where
             .expect("the list runs from g_0")
     }
 
-    /// `(phi_n, psi_n^2)` with `x([n]P) = phi_n(x) / psi_n^2(x)`, both in `F[x]`.
-    ///
-    /// `psi_n^2(x)` vanishes exactly at the `x` of the points `[n]` sends to infinity.
+    /// Multiplication by `n` on the `x` coordinate, as `(phi_n, psi_n^2)` with
+    /// `x([n]P) = phi_n(x) / psi_n^2(x)`. Both are in `F[x]`, and `psi_n^2` vanishes
+    /// exactly at the `x` of the points `[n]` sends to infinity.
     ///
     /// # Panics
     /// If `n` is zero, where `[0]P` is infinity and has no `x`.
-    pub fn multiplication_x(&self, n: usize) -> (Polynomial<F>, Polynomial<F>) {
+    pub fn multiplication_map(&self, n: usize) -> (Polynomial<F>, Polynomial<F>) {
         assert!(n > 0, "[0]P is the point at infinity, which has no x");
         let f = self.cubic();
         let g = self.division_polynomials(n + 1);
@@ -983,7 +983,7 @@ mod tests {
         let field = c.field();
         let points = affine_points(c);
         for n in 1..=up_to {
-            let (phi, psi_squared) = c.multiplication_x(n);
+            let (phi, psi_squared) = c.multiplication_map(n);
             for p in &points {
                 let (x, _) = p.coordinates().expect("affine");
                 let denominator = psi_squared.evaluate(x);
@@ -1064,7 +1064,7 @@ mod tests {
         let f = Integers::modulo(101);
         let c = Curve::new(f.clone(), f.element(3), f.element(5)).expect("nonsingular");
         for n in 1..=7usize {
-            let (phi, psi_squared) = c.multiplication_x(n);
+            let (phi, psi_squared) = c.multiplication_map(n);
             assert_eq!(phi.degree(), Some(n * n), "deg phi_{n}");
             assert_eq!(phi.lead(), Some(&f.identity()), "phi_{n} is monic");
             assert_eq!(psi_squared.degree(), Some(n * n - 1), "deg psi_{n}^2");

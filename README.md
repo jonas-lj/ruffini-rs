@@ -58,7 +58,7 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   `is_supersingular`.
 - **Division polynomials** — `curve.division_polynomials(n)`, held as `gₙ` with
   `ψₙ = gₙ` for odd `n` and `y·gₙ` for even, so they stay in `F[x]`;
-  `multiplication_x(n)` gives `x([n]P) = φₙ/ψₙ²`.
+  `multiplication_map(n)` gives multiplication by `n` on `x` as `φₙ/ψₙ²`.
 
 ### Notation
 
