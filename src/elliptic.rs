@@ -25,11 +25,20 @@ where
     /// `(u^4 a, u^6 b)`, so one has to exist with `u` in the field itself. A curve with
     /// the same j-invariant but no such `u` is a twist.
     ///
+    /// Both curves must be over the same field. Nothing enforces it: element equality
+    /// reduces by this curve's field, so comparing across two gives an answer rather
+    /// than an error. A debug assertion catches a differing order, which is as far as
+    /// the types can see.
+    ///
     /// # Panics
     /// If the characteristic is 2 or 3, where this form of the isomorphisms does not
-    /// hold, or if `other` is over a different field.
+    /// hold.
     pub fn is_isomorphic(&self, other: &Curve<F>) -> bool {
         let f = &self.field;
+        debug_assert!(
+            f.order() == other.field.order(),
+            "the curves are over fields of different order"
+        );
         assert!(
             !f.is_zero(&f.from_integer(6)),
             "the isomorphisms take this form only away from characteristic 2 and 3"
@@ -500,6 +509,43 @@ mod tests {
         curves
     }
 
+    /// Whether some `u` in the field carries one curve's coefficients to the other's,
+    /// found by trying every one. This is the definition `is_isomorphic` is meant to
+    /// decide, worked out without any of its reasoning.
+    fn some_u_carries(f: &Fp, from: &Curve<Fp>, to: &Curve<Fp>) -> bool {
+        let p: u32 = f.order().try_into().unwrap();
+        let (a, b) = from.coefficients();
+        let (c, d) = to.coefficients();
+        (1..p).any(|n| {
+            let u = f.element(n);
+            let square = &u * &u;
+            let fourth = &square * &square;
+            let sixth = &fourth * &square;
+            &fourth * a == *c && &sixth * b == *d
+        })
+    }
+
+    #[test]
+    fn is_isomorphic_decides_whether_some_u_exists() {
+        // Quartic in the prime, and 5 and 7 are already where the fourth and sixth
+        // powers are proper subgroups of the squares.
+        for prime in [5u32, 7] {
+            let f = Integers::modulo(prime);
+            let curves = all_curves(&f);
+            for x in &curves {
+                for y in &curves {
+                    let (a, b) = x.coefficients();
+                    let (c, d) = y.coefficients();
+                    assert_eq!(
+                        x.is_isomorphic(y),
+                        some_u_carries(&f, x, y),
+                        "F_{prime}: ({a}, {b}) against ({c}, {d})"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn curves_sharing_a_j_invariant_fall_into_gcd_k_and_q_minus_one_classes() {
         use crate::number_theory::gcd;
@@ -567,11 +613,6 @@ mod tests {
             Curve::new(f.clone(), f.element(4), f.element(6 * 8 % 11)).expect("nonsingular");
         assert_eq!(twist.j_invariant(), base.j_invariant());
         assert!(!base.is_isomorphic(&twist));
-
-        // Twisting twice comes back, since a non-square squared is a square.
-        let back = Curve::new(f.clone(), f.element(4 * 4 % 11), f.element(6 * 8 * 8 % 11))
-            .expect("nonsingular");
-        assert!(base.is_isomorphic(&back));
     }
 
     #[test]
