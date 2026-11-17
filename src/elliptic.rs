@@ -4,11 +4,57 @@
 //! point at infinity as the identity. The base field must not have characteristic 2
 //! or 3, which this form assumes.
 
+use crate::finite_fields::FiniteField;
 use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, RingOps};
 use num_bigint::{BigInt, Sign};
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
 use std::sync::Arc;
+
+impl<F> Curve<F>
+where
+    F: FiniteField + Clone,
+    F::E: RingOps + Eq + Div<Output = F::E> + for<'x> MulAssign<&'x F::E>,
+    i64: Mul<F::E, Output = F::E>,
+{
+    /// Whether the two curves are isomorphic over their own field, rather than only
+    /// over its closure.
+    ///
+    /// Equal j-invariants make them isomorphic over the algebraic closure. Over `F_q`
+    /// the isomorphisms are `(x, y) -> (u^2 x, u^3 y)`, carrying `(a, b)` to
+    /// `(u^4 a, u^6 b)`, so one has to exist with `u` in the field itself. A curve with
+    /// the same j-invariant but no such `u` is a twist.
+    ///
+    /// # Panics
+    /// If the characteristic is 2 or 3, where this form of the isomorphisms does not
+    /// hold, or if `other` is over a different field.
+    pub fn is_isomorphic(&self, other: &Curve<F>) -> bool {
+        let f = &self.field;
+        assert!(
+            !f.is_zero(&f.from_integer(6)),
+            "the isomorphisms take this form only away from characteristic 2 and 3"
+        );
+        if self.j_invariant() != other.j_invariant() {
+            return false;
+        }
+
+        // Equal j-invariants put both curves in the same case.
+        let (a, b) = (&self.a, &self.b);
+        let (c, d) = (&other.a, &other.b);
+        if f.is_zero(a) {
+            // j = 0, so both are y^2 = x^3 + b and u^6 = d/b.
+            f.is_kth_power(&(d.clone() / b.clone()), 6)
+        } else if f.is_zero(b) {
+            // j = 1728, so both are y^2 = x^3 + ax and u^4 = c/a.
+            f.is_kth_power(&(c.clone() / a.clone()), 4)
+        } else {
+            // Otherwise equal j forces a^3 d^2 = c^3 b^2, which makes this the only
+            // candidate for u^2.
+            let lambda = (a.clone() * d.clone()) / (c.clone() * b.clone());
+            f.is_kth_power(&lambda, 2)
+        }
+    }
+}
 
 /// A point on a curve, or the point at infinity.
 #[derive(Debug)]
@@ -438,6 +484,94 @@ mod tests {
             assert_eq!(c.multiply(2, &p), c.infinity());
             assert_eq!(-p.clone(), p);
         }
+    }
+
+    /// Every nonsingular curve over `f`.
+    fn all_curves(f: &Fp) -> Vec<Arc<Curve<Fp>>> {
+        let p: u32 = f.order().try_into().unwrap();
+        let mut curves = Vec::new();
+        for a in 0..p {
+            for b in 0..p {
+                if let Some(c) = Curve::new(f.clone(), f.element(a), f.element(b)) {
+                    curves.push(c);
+                }
+            }
+        }
+        curves
+    }
+
+    #[test]
+    fn curves_sharing_a_j_invariant_fall_into_gcd_k_and_q_minus_one_classes() {
+        use crate::number_theory::gcd;
+
+        for prime in [5u32, 7, 11, 13, 17] {
+            let f = Integers::modulo(prime);
+            let curves = all_curves(&f);
+
+            let mut seen: Vec<_> = Vec::new();
+            for curve in &curves {
+                let j = curve.j_invariant();
+                if seen.contains(&j) {
+                    continue;
+                }
+                seen.push(j.clone());
+
+                let group: Vec<_> = curves.iter().filter(|c| c.j_invariant() == j).collect();
+                // One representative per class, found by asking.
+                let mut classes: Vec<&Arc<Curve<Fp>>> = Vec::new();
+                for c in &group {
+                    if !classes.iter().any(|r| r.is_isomorphic(c)) {
+                        classes.push(c);
+                    }
+                }
+
+                // The isomorphisms act through u^k, so the classes are F_q* modulo its
+                // k-th powers: 6 at j = 0, 4 at j = 1728, 2 elsewhere, cut down by the
+                // gcd when the field has no such roots.
+                let (a, b) = group[0].coefficients();
+                let k = if f.is_zero(a) {
+                    6u32
+                } else if f.is_zero(b) {
+                    4
+                } else {
+                    2
+                };
+                let expected = gcd(BigInt::from(k), BigInt::from(prime - 1));
+                assert_eq!(
+                    BigInt::from(classes.len()),
+                    expected,
+                    "F_{prime}, j = {j}, k = {k}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_quadratic_twist_shares_a_j_invariant_without_being_isomorphic() {
+        let f = Integers::modulo(11);
+        let base = Curve::new(f.clone(), f.element(1), f.element(6)).expect("nonsingular");
+
+        // (a, b) -> (u^4 a, u^6 b) is an isomorphism for every u.
+        for u in 1..11i64 {
+            let (u4, u6) = (u.pow(4) % 11, u.pow(6) % 11);
+            let same =
+                Curve::new(f.clone(), f.element(u4), f.element(6 * u6 % 11)).expect("nonsingular");
+            assert!(base.is_isomorphic(&same), "at u = {u}");
+        }
+
+        // Scaling by (d^2, d^3) for a non-square d keeps j but is a twist: there is no
+        // u with u^2 = d.
+        let two = f.element(2);
+        assert_eq!(f.legendre_symbol(&two), -1, "2 is a non-square mod 11");
+        let twist =
+            Curve::new(f.clone(), f.element(4), f.element(6 * 8 % 11)).expect("nonsingular");
+        assert_eq!(twist.j_invariant(), base.j_invariant());
+        assert!(!base.is_isomorphic(&twist));
+
+        // Twisting twice comes back, since a non-square squared is a square.
+        let back = Curve::new(f.clone(), f.element(4 * 4 % 11), f.element(6 * 8 * 8 % 11))
+            .expect("nonsingular");
+        assert!(base.is_isomorphic(&back));
     }
 
     #[test]

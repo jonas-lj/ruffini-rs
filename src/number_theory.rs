@@ -74,7 +74,7 @@ pub fn multiplicative_order(a: impl Into<BigInt>, n: impl Into<BigInt>) -> Optio
 }
 
 /// The non-negative greatest common divisor, by the Euclidean algorithm.
-fn gcd(mut a: BigInt, mut b: BigInt) -> BigInt {
+pub fn gcd(mut a: BigInt, mut b: BigInt) -> BigInt {
     while !b.is_zero() {
         let r = a % &b;
         a = std::mem::replace(&mut b, r);
