@@ -56,6 +56,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Point counting** — `curve.order()` over a finite field, by summing the quadratic
   character of `x³ + ax + b`, with `trace_of_frobenius` for `q + 1 - #E` and
   `is_supersingular`.
+- **Division polynomials** — `curve.division_polynomials(n)`, held as `gₙ` with
+  `ψₙ = gₙ` for odd `n` and `y·gₙ` for even, so they stay in `F[x]`;
+  `multiplication_x(n)` gives `x([n]P) = φₙ/ψₙ²`.
 
 ### Notation
 

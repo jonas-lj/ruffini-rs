@@ -5,7 +5,8 @@
 //! or 3, which this form assumes.
 
 use crate::finite_fields::FiniteField;
-use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, RingOps};
+use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
+use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, Monoid, RingOps};
 use num_bigint::{BigInt, Sign};
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
@@ -123,6 +124,9 @@ where
     field: F,
     a: F::E,
     b: F::E,
+    /// One handle for every polynomial the curve hands out, so they can be combined
+    /// with each other and with anything else built from it.
+    polynomials: Arc<PolynomialRing<F>>,
 }
 
 impl<F> Curve<F>
@@ -136,7 +140,13 @@ where
         F::E: for<'x> MulAssign<&'x F::E>,
         i64: Mul<F::E, Output = F::E>,
     {
-        let curve = Curve { field, a, b };
+        let polynomials = field.polynomials();
+        let curve = Curve {
+            field,
+            a,
+            b,
+            polynomials,
+        };
         (!curve.field.is_zero(&curve.discriminant())).then(|| Arc::new(curve))
     }
 
@@ -165,6 +175,11 @@ where
 
     pub fn field(&self) -> &F {
         &self.field
+    }
+
+    /// `F[x]`, the ring the curve's polynomials live in.
+    pub fn polynomials(&self) -> &Arc<PolynomialRing<F>> {
+        &self.polynomials
     }
 
     /// The curve's coefficients `(a, b)`.
@@ -216,6 +231,104 @@ where
             Sign::Minus => -result,
             _ => result,
         }
+    }
+
+    /// The division polynomials `g_0` up to `g_n`.
+    ///
+    /// `psi_n` is `g_n` for odd `n` and `y * g_n` for even `n`, which keeps every one
+    /// of them in `F[x]`: `y` appears only to an even power once the recurrences are
+    /// rewritten in terms of `g`, except for the single factor the convention absorbs.
+    ///
+    /// Each is built from its predecessors, so this is what asking for one costs.
+    pub fn division_polynomials(&self, n: usize) -> Vec<Polynomial<F>> {
+        let ring = &self.polynomials;
+        let x = ring.indeterminate();
+        let a = ring.constant(self.a.clone());
+        let b = ring.constant(self.b.clone());
+        let f_squared = self.cubic() * self.cubic();
+
+        let mut g = vec![
+            ring.zero(),
+            ring.identity(),
+            2 * ring.identity(),
+            3 * x.pow(4) + 6 * (a.clone() * x.pow(2)) + 12 * (b.clone() * x.clone())
+                - a.clone() * a.clone(),
+            4 * (x.pow(6) + 5 * (a.clone() * x.pow(4)) + 20 * (b.clone() * x.pow(3))
+                - 5 * (a.clone() * a.clone() * x.pow(2))
+                - 4 * (a.clone() * b.clone() * x.clone())
+                - 8 * (b.clone() * b.clone())
+                - a.pow(3)),
+        ];
+        g.truncate(n + 1);
+
+        let half = ring.constant(
+            self.field
+                .invert(&self.field.from_integer(2))
+                .expect("the curve form rules out characteristic two"),
+        );
+        for k in 5..=n {
+            let m = k / 2;
+            let next = if k % 2 == 1 {
+                let left = g[m + 2].clone() * g[m].pow(3);
+                let right = g[m - 1].clone() * g[m + 1].pow(3);
+                // y^4 = f^2 lands on whichever side holds the two even indices.
+                if m % 2 == 0 {
+                    f_squared.clone() * left - right
+                } else {
+                    left - f_squared.clone() * right
+                }
+            } else {
+                let inner = g[m + 2].clone() * g[m - 1].pow(2) - g[m - 2].clone() * g[m + 1].pow(2);
+                half.clone() * g[m].clone() * inner
+            };
+            g.push(next);
+        }
+        g
+    }
+
+    /// The `n`-th division polynomial `g_n`, where `psi_n` is `g_n` for odd `n` and
+    /// `y * g_n` for even `n`.
+    pub fn division_polynomial(&self, n: usize) -> Polynomial<F> {
+        self.division_polynomials(n)
+            .pop()
+            .expect("the list runs from g_0")
+    }
+
+    /// `(phi_n, psi_n^2)` with `x([n]P) = phi_n(x) / psi_n^2(x)`, both in `F[x]`.
+    ///
+    /// `psi_n^2(x)` vanishes exactly at the `x` of the points `[n]` sends to infinity.
+    ///
+    /// # Panics
+    /// If `n` is zero, where `[0]P` is infinity and has no `x`.
+    pub fn multiplication_x(&self, n: usize) -> (Polynomial<F>, Polynomial<F>) {
+        assert!(n > 0, "[0]P is the point at infinity, which has no x");
+        let f = self.cubic();
+        let g = self.division_polynomials(n + 1);
+
+        // psi_{n+1} psi_{n-1} picks up the y^2 that psi_n^2 does not, and the other
+        // way round, since n and n +- 1 have opposite parities.
+        let (psi_squared, cross) = if n % 2 == 1 {
+            (
+                g[n].clone() * g[n].clone(),
+                f * g[n + 1].clone() * g[n - 1].clone(),
+            )
+        } else {
+            (
+                f * g[n].clone() * g[n].clone(),
+                g[n + 1].clone() * g[n - 1].clone(),
+            )
+        };
+        (
+            self.polynomials.indeterminate() * psi_squared.clone() - cross,
+            psi_squared,
+        )
+    }
+
+    /// `x^3 + ax + b`, the right-hand side of the curve equation, in `F[x]`.
+    pub fn cubic(&self) -> Polynomial<F> {
+        let ring = &self.polynomials;
+        let x = ring.indeterminate();
+        x.pow(3) + ring.constant(self.a.clone()) * x + ring.constant(self.b.clone())
     }
 }
 
@@ -834,6 +947,148 @@ mod tests {
             curve(1, 6).unwrap().j_invariant(),
             curve(0, 1).unwrap().j_invariant()
         );
+    }
+
+    /// Every affine point, over any finite field.
+    fn affine_points<F>(c: &Arc<Curve<F>>) -> Vec<Point<F>>
+    where
+        F: FiniteField + Clone,
+        F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+    {
+        let field = c.field();
+        let q = field.order();
+        let mut points = Vec::new();
+        let mut i = BigInt::from(0u32);
+        while i < q {
+            let x = field.element_at(&i);
+            let mut j = BigInt::from(0u32);
+            while j < q {
+                if let Some(p) = c.point(x.clone(), field.element_at(&j)) {
+                    points.push(p);
+                }
+                j += 1u32;
+            }
+            i += 1u32;
+        }
+        points
+    }
+
+    /// `x([n]P) = phi_n(x) / psi_n^2(x)` against the group law itself, for every point
+    /// and every `n` up to `up_to`. Cross-multiplied, so the field needs no division.
+    fn check_the_x_map<F>(c: &Arc<Curve<F>>, up_to: usize)
+    where
+        F: FiniteField + Clone,
+        F::E: RingOps + Eq + fmt::Debug + fmt::Display + for<'x> MulAssign<&'x F::E>,
+    {
+        let field = c.field();
+        let points = affine_points(c);
+        for n in 1..=up_to {
+            let (phi, psi_squared) = c.multiplication_x(n);
+            for p in &points {
+                let (x, _) = p.coordinates().expect("affine");
+                let denominator = psi_squared.evaluate(x);
+                match c.multiply(n, p).coordinates() {
+                    // [n]P is at infinity exactly where psi_n^2 vanishes.
+                    None => assert!(field.is_zero(&denominator), "[{n}]{p} = O, psi^2 did not"),
+                    Some((target, _)) => {
+                        assert!(
+                            !field.is_zero(&denominator),
+                            "psi^2 vanished at {p}, [{n}]P did not"
+                        );
+                        assert_eq!(phi.evaluate(x), target.clone() * denominator, "x([{n}]{p})");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_x_map_agrees_with_the_group_law() {
+        let f = Integers::modulo(11);
+        // 13 points, prime order, so no point is n-torsion below 13.
+        check_the_x_map(&curve().1, 7);
+        // Two points of order two, so psi_2^2 does vanish somewhere.
+        check_the_x_map(
+            &Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular"),
+            6,
+        );
+        // Supersingular, 8 points over F_7.
+        let f7 = Integers::modulo(7);
+        check_the_x_map(
+            &Curve::new(f7.clone(), f7.element(1), f7.element(0)).expect("nonsingular"),
+            6,
+        );
+    }
+
+    #[test]
+    fn the_x_map_agrees_with_the_group_law_over_an_extension() {
+        let f = crate::finite_fields::finite_field(5, 2);
+        let c = Curve::new(
+            f.clone(),
+            f.element_at(&1u32.into()),
+            f.element_at(&1u32.into()),
+        )
+        .expect("nonsingular");
+        check_the_x_map(&c, 4);
+    }
+
+    #[test]
+    fn division_polynomials_have_the_degrees_and_leading_coefficients_they_should() {
+        let f = Integers::modulo(101);
+        let c = Curve::new(f.clone(), f.element(3), f.element(5)).expect("nonsingular");
+        let g = c.division_polynomials(9);
+
+        assert_eq!(g.len(), 10);
+        assert_eq!(g[0].degree(), None, "g_0 is zero");
+        for (n, g_n) in g.iter().enumerate().skip(1) {
+            // deg psi_n^2 = n^2 - 1, and the even ones give three of that to f.
+            let expected = if n % 2 == 1 {
+                (n * n - 1) / 2
+            } else {
+                (n * n - 4) / 2
+            };
+            assert_eq!(g_n.degree(), Some(expected), "deg g_{n}");
+            assert_eq!(g_n.lead(), Some(&f.element(n as i64)), "lead g_{n}");
+        }
+
+        // One at a time gives the same list, and shares its ring.
+        for (n, g_n) in g.iter().enumerate() {
+            assert_eq!(&c.division_polynomial(n), g_n, "g_{n}");
+        }
+        // Shorter lists are prefixes.
+        assert_eq!(c.division_polynomials(3), g[..4]);
+    }
+
+    #[test]
+    fn phi_is_monic_of_degree_n_squared() {
+        let f = Integers::modulo(101);
+        let c = Curve::new(f.clone(), f.element(3), f.element(5)).expect("nonsingular");
+        for n in 1..=7usize {
+            let (phi, psi_squared) = c.multiplication_x(n);
+            assert_eq!(phi.degree(), Some(n * n), "deg phi_{n}");
+            assert_eq!(phi.lead(), Some(&f.identity()), "phi_{n} is monic");
+            assert_eq!(psi_squared.degree(), Some(n * n - 1), "deg psi_{n}^2");
+            assert_eq!(
+                psi_squared.lead(),
+                Some(&f.element((n * n) as i64)),
+                "lead psi_{n}^2"
+            );
+        }
+    }
+
+    #[test]
+    fn the_cubic_is_the_curve_equation() {
+        let (f, c) = curve();
+        let cubic = c.cubic();
+        for x in 0..11i64 {
+            let x = f.element(x);
+            assert_eq!(cubic.evaluate(&x), c.evaluate(&x));
+        }
+        // Its roots are the points of order two, where y = 0.
+        let two_torsion = Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular");
+        for x in [0i64, 1, 10] {
+            assert!(f.is_zero(&two_torsion.cubic().evaluate(&f.element(x))));
+        }
     }
 
     #[test]
