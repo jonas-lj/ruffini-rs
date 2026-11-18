@@ -33,7 +33,7 @@ use num_bigint::BigInt;
 use ruffini::elliptic::Curve;
 use ruffini::finite_fields::{finite_field, ExtensionField, FiniteField, PrimeField};
 use ruffini::polynomials::{Polynomial, PolynomialRing};
-use ruffini::structures::{CommutativeMonoid, QuotientRingElement, Ring};
+use ruffini::structures::{CommutativeMonoid, Domain, Monoid, QuotientRingElement, Ring};
 use std::sync::Arc;
 
 type Field = ExtensionField;
@@ -63,9 +63,19 @@ fn main() {
     println!("1. The field");
     println!(
         "   F_{p}^2 = F_{p}[x]/({}), of order {}",
-        show_polynomial(p, field.modulus()),
+        show_polynomial(p, field.modulus(), "x"),
         field.order()
     );
+    // With p = 3 (mod 4), -1 is not a square in F_p, so x^2 + 1 is irreducible and is
+    // the least such quadratic, which is the one the library picks. That makes the
+    // class of x a square root of -1, and the elements below print with i for it.
+    let i = field.element(field.base().indeterminate());
+    assert_eq!(
+        i.pow(2),
+        -field.identity(),
+        "the generator is not a square root of -1"
+    );
+    println!("   -1 is not a square here, so the class of x is i, with i^2 = -1");
 
     // Step 2. The starting curve, whose j-invariant is 1728 reduced modulo p.
     let start = Curve::new(field.clone(), field.from_integer(1), field.from_integer(0))
@@ -185,12 +195,12 @@ fn explore(p: u32, start: &Arc<Curve<Field>>) -> (Vec<Vertex>, Vec<(usize, usize
 /// arrive as `-4` and again as `19`. Printing those as two vertices would misreport
 /// the graph, though the classes themselves compare equal either way.
 fn show(p: u32, element: &Element) -> String {
-    show_polynomial(p, element.representative())
+    show_polynomial(p, element.representative(), "i")
 }
 
-/// A polynomial over `F_p`, highest degree first, with every coefficient taken into
-/// `0..p`.
-fn show_polynomial(p: u32, polynomial: &Polynomial<PrimeField>) -> String {
+/// A polynomial over `F_p` in `variable`, highest degree first, with every
+/// coefficient taken into `0..p`.
+fn show_polynomial(p: u32, polynomial: &Polynomial<PrimeField>, variable: &str) -> String {
     let modulus = BigInt::from(p);
     let terms: Vec<String> = (0..=polynomial.degree().unwrap_or(0))
         .rev()
@@ -200,10 +210,10 @@ fn show_polynomial(p: u32, polynomial: &Polynomial<PrimeField>) -> String {
             match (c.to_string().as_str(), i) {
                 ("0", _) => None,
                 (c, 0) => Some(c.to_string()),
-                ("1", 1) => Some("x".to_string()),
-                ("1", i) => Some(format!("x^{i}")),
-                (c, 1) => Some(format!("{c}x")),
-                (c, i) => Some(format!("{c}x^{i}")),
+                ("1", 1) => Some(variable.to_string()),
+                ("1", degree) => Some(format!("{variable}^{degree}")),
+                (c, 1) => Some(format!("{c}{variable}")),
+                (c, degree) => Some(format!("{c}{variable}^{degree}")),
             }
         })
         .collect();
