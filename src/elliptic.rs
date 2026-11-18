@@ -6,7 +6,6 @@
 
 use crate::finite_fields::FiniteField;
 use crate::fractions::Fraction;
-use crate::number_theory::factorise;
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, Domain, EuclideanDomain, Field, Monoid, RingOps,
@@ -330,39 +329,43 @@ where
         x.pow(3) + ring.constant(self.a.clone()) * x + ring.constant(self.b.clone())
     }
 
-    /// The separable isogeny with kernel `<generator>`, by Vélu's formulas. The point
-    /// at infinity, of order one, gives the identity map.
+    /// The separable isogeny with kernel `<generator>`, by Vélu's formulas, taking
+    /// `order` to be the order of `generator`. The point at infinity, of order one,
+    /// gives the identity map.
     ///
-    /// # Panics
-    /// If `generator` does not have order `order`, which this checks.
+    /// Nothing checks `order`, and a wrong one runs the sums over the wrong set of
+    /// points, leaving something that is not an isogeny. It need not even be a map
+    /// between curves, so this and [`Isogeny::evaluate`] can both panic, which too
+    /// large an `order` always does.
     pub fn isogeny(self: &Arc<Self>, generator: &Point<F>, order: usize) -> Isogeny<F>
     where
         F::E: for<'x> MulAssign<&'x F::E>,
         i64: Mul<F::E, Output = F::E>,
     {
-        assert!(order > 0, "every point has positive order");
-        assert!(
-            self.has_order(generator, order),
-            "the generator does not have order {order}"
-        );
         let field = &self.field;
 
         // One Q from each pair {Q, -Q}, which the x coordinate tells apart, together
         // with the points of order two, each of which is its own pair.
         let mut summands: Vec<(F::E, F::E, F::E)> = Vec::new();
         let mut q = generator.clone();
-        while let Some((x, y)) = q.coordinates().map(|(x, y)| (x.clone(), y.clone())) {
-            if !summands.iter().any(|(seen, _, _)| *seen == x) {
-                let g = field.from_integer(3) * x.clone() * x.clone() + self.a.clone();
-                let v = if field.is_zero(&y) {
-                    g
-                } else {
-                    field.from_integer(2) * g
-                };
-                let u = field.from_integer(4) * y.clone() * y;
-                summands.push((x, u, v));
-            }
+        for _ in 1..order {
+            let (x, y) = q
+                .coordinates()
+                .map(|(x, y)| (x.clone(), y.clone()))
+                .expect("the generator reached infinity short of `order`");
             q += generator.clone();
+
+            if summands.iter().any(|(seen, _, _)| *seen == x) {
+                continue;
+            }
+            let g = field.from_integer(3) * x.clone() * x.clone() + self.a.clone();
+            let v = if field.is_zero(&y) {
+                g
+            } else {
+                field.from_integer(2) * g
+            };
+            let u = field.from_integer(4) * y.clone() * y;
+            summands.push((x, u, v));
         }
 
         let mut v_sum = field.zero();
@@ -385,22 +388,14 @@ where
             summands,
         }
     }
-
-    /// Whether `p` has order exactly `n`: `n` kills it and no `n / q` for a prime `q`
-    /// dividing `n` does.
-    fn has_order(self: &Arc<Self>, p: &Point<F>, n: usize) -> bool {
-        if !self.multiply(n, p).is_infinity() {
-            return false;
-        }
-        factorise(n).iter().all(|(prime, _)| {
-            let prime: usize = prime.try_into().expect("a factor of n fits where n does");
-            !self.multiply(n / prime, p).is_infinity()
-        })
-    }
 }
 
-/// A separable isogeny `(x, y) -> (r1(x), y * r2(x))`, as Vélu's formulas give it,
-/// with `r2 = r1'`.
+/// A separable isogeny `(x, y) -> (r1(x), y * r2(x))`, as Vélu's formulas give it
+/// from one `(x_Q, u_Q, v_Q)` per point `Q` of `S`, which holds one of each pair
+/// `{Q, -Q}` in the kernel:
+///
+/// - `r1 = x + sum [v_Q/(x - x_Q) + u_Q/(x - x_Q)^2]`
+/// - `r2 = 1 - sum [v_Q/(x - x_Q)^2 + 2 u_Q/(x - x_Q)^3]`, which is `r1'`
 #[derive(Debug)]
 pub struct Isogeny<F>
 where
@@ -433,8 +428,8 @@ where
         self.degree
     }
 
-    /// Vélu's `(x_Q, u_Q, v_Q)`, one triple for each `Q` in `S`, which is one summand
-    /// of `r1` apiece.
+    /// The `(x_Q, u_Q, v_Q)`, one triple for each `Q` in `S`: `u_Q` is `4y_Q^2`, and
+    /// `v_Q` is `3x_Q^2 + a`, doubled away from the 2-torsion.
     pub fn summands(&self) -> &[(F::E, F::E, F::E)] {
         &self.summands
     }
@@ -1262,13 +1257,24 @@ mod tests {
         ring.element(coefficients)
     }
 
-    /// A point of order exactly `n`, found by trying every one.
+    /// A point of order exactly `n`, found by trying every one: `n` kills it and no
+    /// `n / q` for a prime `q` dividing `n` does. The order is what `isogeny` trusts
+    /// the caller for, so the tests work it out for themselves.
     fn point_of_order<F>(c: &Arc<Curve<F>>, n: usize) -> Option<Point<F>>
     where
         F: FiniteField + Clone,
         F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
     {
-        affine_points(c).into_iter().find(|p| c.has_order(p, n))
+        let primes: Vec<usize> = crate::number_theory::factorise(n)
+            .iter()
+            .map(|(prime, _)| prime.try_into().expect("a factor of n fits where n does"))
+            .collect();
+        affine_points(c).into_iter().find(|p| {
+            c.multiply(n, p).is_infinity()
+                && primes
+                    .iter()
+                    .all(|prime| !c.multiply(n / prime, p).is_infinity())
+        })
     }
 
     /// Everything an isogeny of degree `n` with kernel `<generator>` has to satisfy,
@@ -1452,26 +1458,6 @@ mod tests {
         let r1 = iso.x_map();
         assert_eq!(r1.numerator(), &c.polynomials().indeterminate());
         assert_eq!(r1.denominator().degree(), Some(0));
-    }
-
-    #[test]
-    #[should_panic(expected = "the generator does not have order 7")]
-    fn an_order_the_generator_does_not_have_is_rejected() {
-        let (f, c) = curve();
-        // The group has prime order 13, so every affine point has order 13.
-        let g = c.point(f.element(2), f.element(7)).expect("on the curve");
-        c.isogeny(&g, 7);
-    }
-
-    #[test]
-    #[should_panic(expected = "the generator does not have order 4")]
-    fn a_multiple_of_the_order_is_rejected_too() {
-        // (0, 0) has order two on y^2 = x^3 - x, so four kills it as well and only
-        // the prime divisors tell the two apart.
-        let f = Integers::modulo(11);
-        let c = Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular");
-        let t = c.point(f.element(0), f.element(0)).expect("on the curve");
-        c.isogeny(&t, 4);
     }
 
     #[test]
