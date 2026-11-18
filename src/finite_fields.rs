@@ -11,7 +11,7 @@ use crate::structures::{
     Domain, EuclideanDomain, Field, Monoid, QuotientRing, QuotientRingElement, RingOps,
 };
 use num_bigint::BigInt;
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use std::ops::MulAssign;
 use std::sync::Arc;
 
@@ -195,6 +195,24 @@ where
     {
         crate::finite_fields::sqrt(self, x)
     }
+
+    /// An `r`-th root of `x` for a prime `r`. See [`root`], which this forwards to.
+    fn root(&self, x: &Self::E, r: u32) -> Option<Self::E>
+    where
+        Self: Sized,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::finite_fields::root(self, x, r)
+    }
+
+    /// A primitive `r`-th root of unity. See [`root_of_unity`], which this forwards to.
+    fn root_of_unity(&self, r: u32) -> Option<Self::E>
+    where
+        Self: Sized,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::finite_fields::root_of_unity(self, r)
+    }
 }
 
 impl FiniteField for PrimeField {
@@ -293,7 +311,8 @@ where
 
 /// A square root of `a`, or [`None`] when `a` is not a square.
 ///
-/// Both roots are `r` and `-r`; this returns whichever the algorithm reaches.
+/// Both roots are `r` and `-r`; this returns whichever the algorithm reaches. Tonelli
+/// and Shanks' algorithm is [`root`] at `r = 2`, which this forwards to.
 ///
 /// `F` must really be a field. A quotient by a composite modulus is accepted by the
 /// type and the answer is then unspecified: `Z/15` reports that 4 is not a square,
@@ -303,66 +322,170 @@ where
     F: FiniteField,
     F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
 {
-    let q = field.order();
-    // Even order means characteristic two, where squaring is the Frobenius map and so a
-    // bijection. Its inverse is a^(q/2), since a^q = a for every element.
-    if (&q % 2u32).is_zero() {
-        return Some(field.pow(a, &q / 2u32));
-    }
+    root(field, a, 2)
+}
 
-    match legendre_symbol(field, a) {
-        0 => return Some(field.zero()),
-        -1 => return None,
-        _ => {}
+/// An `r`-th root of `a`, or [`None`] when `a` is not an `r`-th power, by Adleman,
+/// Manders and Miller's algorithm.
+///
+/// There are `r` roots when `r` divides `q - 1` and one otherwise. This returns
+/// whichever the algorithm reaches, and [`root_of_unity`] is the factor between them.
+///
+/// # Panics
+/// If `r` is not prime, where one root at a time is not the whole question.
+pub fn root<F>(field: &F, a: &F::E, r: u32) -> Option<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    assert_prime(r);
+    if field.is_zero(a) {
+        return Some(field.zero());
     }
-
-    // Tonelli and Shanks: write q - 1 = m * 2^s with m odd, then walk a^m down the
-    // subgroup of order 2^s to one, correcting the root at each step.
     let one = field.identity();
-    let (mut odd, mut s) = (&q - 1u32, 0u32);
-    while (&odd % 2u32).is_zero() {
-        odd /= 2u32;
+    let order = field.order() - 1u32;
+    if order.is_one() {
+        // F_2, whose only nonzero element is its own root.
+        return Some(a.clone());
+    }
+
+    // q - 1 = r^s * t, with r dividing t no further.
+    let (mut t, mut s) = (order.clone(), 0u32);
+    while (&t % r).is_zero() {
+        t /= r;
         s += 1;
     }
-    // q = 3 mod 4 leaves the odd part one halving away, so no search is needed.
-    if s == 1 {
-        return Some(field.pow(a, (&q + 1u32) / 4u32));
+
+    // With r coprime to q - 1, raising to the r is a bijection and the root is the
+    // inverse exponent. The characteristic always lands here.
+    if s == 0 {
+        return Some(field.pow(a, inverse_modulo(r, &order)));
     }
 
-    let mut index = BigInt::from(2);
-    let z = loop {
-        assert!(
-            index < q,
-            "no non-residue found: the order is not a field's"
+    // Euler's criterion for r-th powers.
+    if field.pow(a, &order / r) != one {
+        return None;
+    }
+
+    // d * r = 1 + k * t, so a^d is a root but for a factor in the Sylow r-subgroup.
+    let d = if t.is_one() {
+        BigInt::one()
+    } else {
+        inverse_modulo(r, &t)
+    };
+    let k = (&d * r - 1u32) / &t;
+    let mut root = field.pow(a, d);
+    if s == 1 {
+        // The criterion says a^t = 1, which leaves that factor trivial.
+        return Some(root);
+    }
+
+    // c generates the Sylow r-subgroup, of order r^s, and zeta the r-th roots of unity
+    // within it. From here on root^r = a * h, with h in that subgroup.
+    let mut h = field.pow(&field.pow(a, t.clone()), k);
+    let c = field.pow(&non_power(field, r), t);
+    let zeta = field.pow(&c, BigInt::from(r).pow(s - 1));
+    let roots_of_unity: Vec<F::E> = (0..r).map(|j| field.pow(&zeta, j)).collect();
+
+    // Each round divides the order of h by r, and the criterion leaves it dividing
+    // r^(s-1), so this is every round there can be.
+    for _ in 1..s {
+        if h == one {
+            break;
+        }
+
+        // The order of h, as a power of r.
+        let (mut i, mut power) = (0u32, h.clone());
+        while power != one {
+            power = field.pow(&power, r);
+            i += 1;
+            assert!(i < s, "the order is not a field's");
+        }
+
+        // h's leading digit in the subgroup, as a power of zeta, which is not the
+        // zeroth: i is the exact order, so this is not one.
+        let leading = field.pow(&h, BigInt::from(r).pow(i - 1));
+        let j = roots_of_unity
+            .iter()
+            .position(|power| *power == leading)
+            .expect("a power of zeta");
+        // Cancelling it divides the order of h by r, so this ends within s rounds.
+        let correction = field.pow(
+            &c,
+            BigInt::from(r - j as u32) * BigInt::from(r).pow(s - i - 1),
         );
+        h *= field.pow(&correction, r);
+        root *= correction;
+    }
+    assert!(
+        h == one,
+        "the Sylow walk did not finish: the order is not a field's"
+    );
+    Some(root)
+}
+
+/// A primitive `r`-th root of unity, or [`None`] when the field holds none: `F*` is
+/// cyclic of order `q - 1`, so one exists exactly when `r` divides `q - 1`.
+///
+/// # Panics
+/// If `r` is not prime, where a non-`r`-th power need not be primitive.
+pub fn root_of_unity<F>(field: &F, r: u32) -> Option<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    assert_prime(r);
+    let order = field.order() - 1u32;
+    if !(&order % r).is_zero() {
+        return None;
+    }
+    // A non-r-th power raised to (q - 1)/r is an r-th root of unity other than one,
+    // and r being prime leaves nothing between that and primitive.
+    Some(field.pow(&non_power(field, r), &order / r))
+}
+
+/// An element that is not an `r`-th power, by trying every one in turn.
+///
+/// # Panics
+/// If there is none, which is every field where `r` does not divide `q - 1`.
+fn non_power<F>(field: &F, r: u32) -> F::E
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let q = field.order();
+    let exponent = (&q - 1u32) / r;
+    // Zero and one are r-th powers, so the search starts past them.
+    let mut index = BigInt::from(2);
+    loop {
+        assert!(index < q, "every element is an r-th power");
         let candidate = field.element_at(&index);
-        if legendre_symbol(field, &candidate) == -1 {
-            break candidate;
+        if field.pow(&candidate, exponent.clone()) != field.identity() {
+            return candidate;
         }
         index += 1u32;
-    };
-
-    let mut m = s;
-    let mut c = field.pow(&z, odd.clone());
-    let mut t = field.pow(a, odd.clone());
-    let mut r = field.pow(a, (&odd + 1u32) / 2u32);
-    while t != one {
-        // The least i with t^(2^i) = 1, which is below m while t is not one.
-        let mut i = 0;
-        let mut square = t.clone();
-        while square != one {
-            square = square.clone() * square.clone();
-            i += 1;
-        }
-        // t has order 2^i with i < m, so m falls every round and the loop ends.
-        assert!(i < m, "the order is not a field's");
-        let b = field.pow(&c, BigInt::from(2).pow(m - i - 1));
-        m = i;
-        c = b.clone() * b.clone();
-        t *= c.clone();
-        r *= b;
     }
-    Some(r)
+}
+
+/// `r` inverted modulo `modulus`, as a representative in `1..modulus`.
+fn inverse_modulo(r: u32, modulus: &BigInt) -> BigInt {
+    let ring = Integers::modulo(modulus.clone());
+    let inverse: BigInt = ring
+        .inverse(Integer::from(BigInt::from(r)))
+        .expect("r is coprime to the modulus")
+        .representative()
+        .clone()
+        .into();
+    ((inverse % modulus) + modulus) % modulus
+}
+
+/// # Panics
+/// Unless `r` is prime.
+fn assert_prime(r: u32) {
+    assert!(
+        factorise(r) == [(BigInt::from(r), 1)],
+        "the exponent {r} is not prime"
+    );
 }
 
 /// Whether `f` is irreducible over `F_p`, by Rabin's test.
@@ -645,6 +768,141 @@ mod tests {
         assert_eq!(&r * &r, a);
         assert_eq!(&(-r.clone()) * &(-r.clone()), a);
         assert_ne!(r.clone(), -r);
+    }
+
+    /// Checks `root` against the `r`-th powers of the whole field, and against
+    /// `is_kth_power`, which answers the same existence question another way.
+    fn roots_agree_with_powering<F>(field: &F, r: u32, name: &str)
+    where
+        F: FiniteField,
+        F::E: RingOps + Eq + std::fmt::Debug + for<'x> MulAssign<&'x F::E>,
+    {
+        let all = elements(field);
+        let powers: Vec<F::E> = all.iter().map(|x| field.pow(x, r)).collect();
+
+        for a in &all {
+            match root(field, a, r) {
+                Some(x) => {
+                    assert_eq!(field.pow(&x, r), *a, "{name}, r = {r}");
+                    assert!(field.is_kth_power(a, r), "{name}, r = {r}: not a power");
+                }
+                None => {
+                    assert!(!powers.contains(a), "{name} missed a root, r = {r}");
+                    assert!(!field.is_kth_power(a, r), "{name}, r = {r}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prime_roots_power_back_and_exist_exactly_for_the_powers() {
+        for prime in [2u32, 3, 5, 7, 11, 13, 17, 19, 23, 31, 101] {
+            assert_eq!(factorise(prime), vec![(BigInt::from(prime), 1)], "{prime}");
+            let field = Integers::modulo(prime);
+            for r in [2u32, 3, 5, 7] {
+                roots_agree_with_powering(&field, r, &format!("F_{prime}"));
+            }
+        }
+    }
+
+    #[test]
+    fn prime_roots_in_extension_fields() {
+        for (p, k) in [(3u32, 2usize), (5, 2), (7, 2), (2, 3), (2, 4), (3, 3)] {
+            let field = finite_field(p, k);
+            for r in [2u32, 3, 5] {
+                roots_agree_with_powering(&field, r, &format!("F_{p}^{k}"));
+            }
+        }
+    }
+
+    #[test]
+    fn prime_roots_where_the_sylow_subgroup_is_not_cyclic_of_order_r() {
+        // r^2 divides q - 1 in each of these, which is the only case where the walk
+        // through the Sylow subgroup runs at all: everything else is one of the two
+        // shortcuts.
+        for (prime, r) in [(17u32, 2u32), (19, 3), (73, 3), (101, 5), (41, 2)] {
+            let order = BigInt::from(prime) - 1u32;
+            let mut s = 0u32;
+            let mut t = order.clone();
+            while (&t % r).is_zero() {
+                t /= r;
+                s += 1;
+            }
+            assert!(s >= 2, "F_{prime} has only r^{s} in its order, r = {r}");
+            roots_agree_with_powering(&Integers::modulo(prime), r, &format!("F_{prime}"));
+        }
+    }
+
+    #[test]
+    fn the_characteristic_root_is_unique_because_frobenius_is_a_bijection() {
+        for (p, k) in [(3u32, 2usize), (5, 2), (2, 4), (7, 1)] {
+            let field = finite_field(p, k);
+            let all = elements(&field);
+            let powers: Vec<_> = all.iter().map(|x| field.pow(x, p)).collect();
+
+            // Frobenius is one to one, so each element has exactly one p-th root.
+            for (i, x) in powers.iter().enumerate() {
+                assert!(!powers[i + 1..].contains(x), "F_{p}^{k}: x^p repeats");
+            }
+            for a in &all {
+                let x = root(&field, a, p).expect("x -> x^p is onto");
+                assert_eq!(field.pow(&x, p), *a, "F_{p}^{k}");
+            }
+        }
+    }
+
+    #[test]
+    fn roots_of_unity_are_primitive_and_exist_exactly_when_r_divides_the_order() {
+        for prime in [3u32, 5, 7, 11, 13, 17, 19, 31, 101] {
+            let field = Integers::modulo(prime);
+            let order = BigInt::from(prime) - 1u32;
+            for r in [2u32, 3, 5, 7] {
+                match root_of_unity(&field, r) {
+                    Some(zeta) => {
+                        assert!((&order % r).is_zero(), "F_{prime}: r = {r} does not divide");
+                        assert_eq!(field.pow(&zeta, r), field.identity(), "F_{prime}");
+                        // r prime, so anything but one is of order exactly r.
+                        assert_ne!(zeta, field.identity(), "F_{prime}, r = {r}");
+                    }
+                    None => assert!(!(&order % r).is_zero(), "F_{prime}: r = {r} divides"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn one_root_and_the_roots_of_unity_give_all_of_them() {
+        // 101 - 1 = 100 = 4 * 25, so fifth roots come in fives and square roots in
+        // pairs.
+        let field = Integers::modulo(101);
+        for r in [2u32, 5] {
+            let zeta = root_of_unity(&field, r).expect("r divides 100");
+            for n in 1..101 {
+                let a = field.element(n);
+                let Some(first) = root(&field, &a, r) else {
+                    continue;
+                };
+                let all: Vec<_> = (0..r)
+                    .map(|j| first.clone() * field.pow(&zeta, j))
+                    .collect();
+                for (i, x) in all.iter().enumerate() {
+                    assert_eq!(field.pow(x, r), a, "a root of {n}");
+                    assert!(!all[i + 1..].contains(x), "two roots of {n} coincide");
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "the exponent 4 is not prime")]
+    fn a_composite_exponent_is_rejected() {
+        root(&Integers::modulo(17), &Integers::modulo(17).element(1), 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "the exponent 1 is not prime")]
+    fn a_root_of_unity_needs_a_prime_too() {
+        root_of_unity(&Integers::modulo(17), 1);
     }
 
     #[test]
