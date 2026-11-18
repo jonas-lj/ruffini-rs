@@ -67,6 +67,179 @@ where
             f.is_kth_power(&lambda, 2)
         }
     }
+
+    /// One isomorphism onto `other` over the field itself, or [`None`] when there is
+    /// none. [`Curve::isomorphisms`] gives them all.
+    ///
+    /// # Panics
+    /// If the characteristic is 2 or 3, as [`Curve::is_isomorphic`] does.
+    pub fn isomorphism(self: &Arc<Self>, other: &Arc<Curve<F>>) -> Option<Isomorphism<F>> {
+        let f = &self.field;
+        debug_assert!(
+            f.order() == other.field.order(),
+            "the curves are over fields of different order"
+        );
+        assert!(
+            !f.is_zero(&f.from_integer(6)),
+            "the isomorphisms take this form only away from characteristic 2 and 3"
+        );
+        if self.j_invariant() != other.j_invariant() {
+            return None;
+        }
+
+        // The same three cases as `is_isomorphic`, asking for the root rather than
+        // whether there is one.
+        let (a, b) = (&self.a, &self.b);
+        let (c, d) = (&other.a, &other.b);
+        let u = if f.is_zero(a) {
+            sixth_root(f, &(d.clone() / b.clone()))?
+        } else if f.is_zero(b) {
+            fourth_root(f, &(c.clone() / a.clone()))?
+        } else {
+            f.sqrt(&((a.clone() * d.clone()) / (c.clone() * b.clone())))?
+        };
+        Some(Isomorphism {
+            domain: Arc::clone(self),
+            codomain: Arc::clone(other),
+            u,
+        })
+    }
+
+    /// Every isomorphism onto `other` over the field itself, which is one of them
+    /// times each root of unity in `mu_k`, and so empty when there is none.
+    ///
+    /// # Panics
+    /// If the characteristic is 2 or 3, as [`Curve::is_isomorphic`] does.
+    pub fn isomorphisms(self: &Arc<Self>, other: &Arc<Curve<F>>) -> Vec<Isomorphism<F>> {
+        let Some(first) = self.isomorphism(other) else {
+            return Vec::new();
+        };
+        roots_of_unity(&self.field, self.automorphism_degree())
+            .into_iter()
+            .map(|zeta| Isomorphism {
+                domain: Arc::clone(self),
+                codomain: Arc::clone(other),
+                u: first.u.clone() * zeta,
+            })
+            .collect()
+    }
+
+    /// The `k` with `Aut(E) = mu_k`: 6 where `j` is 0, 4 where it is 1728, and 2
+    /// everywhere else.
+    fn automorphism_degree(&self) -> u32 {
+        if self.field.is_zero(&self.a) {
+            6
+        } else if self.field.is_zero(&self.b) {
+            4
+        } else {
+            2
+        }
+    }
+}
+
+/// A fourth root of `v`, or [`None`] when it has none.
+fn fourth_root<F>(field: &F, v: &F::E) -> Option<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let square = field.sqrt(v)?;
+    // Both signs, because which of the two square roots `sqrt` hands back is not
+    // something it promises, and where -1 is not a square only one of them is.
+    field
+        .sqrt(&square)
+        .or_else(|| field.sqrt(&(field.zero() - square.clone())))
+}
+
+/// A sixth root of `v`, or [`None`] when it has none.
+fn sixth_root<F>(field: &F, v: &F::E) -> Option<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    // The cube root first: the cube roots of a sixth power differ by an element of
+    // order three, which is a square like every element of odd order, so either cube
+    // root will do and there is no case to split.
+    field.sqrt(&field.root(v, 3)?)
+}
+
+/// The `k`-th roots of unity, for `k` of 2, 4 or 6: `mu_k` is cyclic of order
+/// `gcd(k, q - 1)`, which away from characteristic two is 2, 4 or 6 again.
+fn roots_of_unity<F>(field: &F, k: u32) -> Vec<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let one = field.identity();
+    let order = crate::number_theory::gcd(k, field.order() - 1u32);
+    let order: u32 = order.try_into().expect("a divisor of 6");
+    let generator = match order {
+        2 => field.zero() - one.clone(),
+        4 => field
+            .sqrt(&(field.zero() - one.clone()))
+            .expect("4 divides q - 1, so -1 is a square"),
+        6 => field.zero() - field.root_of_unity(3).expect("3 divides q - 1"),
+        _ => panic!("mu_{k} has {order} elements, which no odd order allows"),
+    };
+    (0..order).map(|j| field.pow(&generator, j)).collect()
+}
+
+/// An isomorphism `(x, y) -> (u^2 x, u^3 y)`, which away from characteristic 2 and 3
+/// is the only shape one can take between curves in this form.
+#[derive(Debug)]
+pub struct Isomorphism<F>
+where
+    F: Field + Clone,
+    F::E: RingOps + Eq,
+{
+    domain: Arc<Curve<F>>,
+    codomain: Arc<Curve<F>>,
+    u: F::E,
+}
+
+impl<F> Isomorphism<F>
+where
+    F: Field + Clone,
+    F::E: RingOps + Eq,
+{
+    pub fn domain(&self) -> &Arc<Curve<F>> {
+        &self.domain
+    }
+
+    pub fn codomain(&self) -> &Arc<Curve<F>> {
+        &self.codomain
+    }
+
+    /// The `u` of `(x, y) -> (u^2 x, u^3 y)`, which carries `(a, b)` to
+    /// `(u^4 a, u^6 b)`.
+    pub fn u(&self) -> &F::E {
+        &self.u
+    }
+
+    /// The image of `p`, with infinity fixed.
+    pub fn evaluate(&self, p: &Point<F>) -> Point<F> {
+        let Some((x, y)) = p.coordinates() else {
+            return self.codomain.infinity();
+        };
+        let square = self.u.clone() * self.u.clone();
+        let cube = square.clone() * self.u.clone();
+        self.codomain
+            .point(square * x.clone(), cube * y.clone())
+            .expect("an isomorphism lands on the codomain")
+    }
+
+    /// The isomorphism back, which is the one with `u` inverted.
+    pub fn inverse(&self) -> Isomorphism<F> {
+        Isomorphism {
+            domain: Arc::clone(&self.codomain),
+            codomain: Arc::clone(&self.domain),
+            u: self
+                .domain
+                .field
+                .invert(&self.u)
+                .expect("u is nonzero, being a root of a nonzero coefficient ratio"),
+        }
+    }
 }
 
 impl<F> Curve<F>
@@ -692,7 +865,7 @@ where
 mod tests {
     use super::*;
     use crate::integers::Integers;
-    use crate::structures::{Monoid, QuotientRing};
+    use crate::structures::{Monoid, QuotientRing, Ring};
 
     type Fp = Arc<QuotientRing<Integers>>;
 
@@ -851,6 +1024,174 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fourth_and_sixth_roots_exist_exactly_for_the_powers() {
+        for prime in [5u32, 7, 11, 13, 17, 19, 37] {
+            let f = Integers::modulo(prime);
+            let all: Vec<_> = (0..prime as i64).map(|n| f.element(n)).collect();
+            let fourth: Vec<_> = all.iter().map(|x| f.pow(x, 4)).collect();
+            let sixth: Vec<_> = all.iter().map(|x| f.pow(x, 6)).collect();
+
+            for x in &all {
+                match fourth_root(&f, x) {
+                    Some(r) => assert_eq!(f.pow(&r, 4), *x, "F_{prime}"),
+                    None => assert!(!fourth.contains(x), "F_{prime}: {x} is a fourth power"),
+                }
+                match sixth_root(&f, x) {
+                    Some(r) => assert_eq!(f.pow(&r, 6), *x, "F_{prime}"),
+                    None => assert!(!sixth.contains(x), "F_{prime}: {x} is a sixth power"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_isomorphism_exists_exactly_where_is_isomorphic_says_and_carries_the_pair() {
+        // 13 = 1 mod 12, so F_13 has all of mu_4 and mu_6 and every branch runs.
+        for prime in [7u32, 11, 13] {
+            let f = Integers::modulo(prime);
+            let curves = all_curves(&f);
+            // Isomorphism is symmetric, and `inverse` carries the other direction, so
+            // the unordered pairs are enough.
+            for (i, x) in curves.iter().enumerate() {
+                for y in curves.iter().skip(i) {
+                    let (a, b) = x.coefficients();
+                    let (c, d) = y.coefficients();
+                    let label = format!("F_{prime}: ({a}, {b}) to ({c}, {d})");
+                    match x.isomorphism(y) {
+                        Some(iso) => {
+                            assert!(x.is_isomorphic(y), "{label}");
+                            let u = iso.u();
+                            assert_eq!(f.pow(u, 4) * a.clone(), *c, "u^4 a, {label}");
+                            assert_eq!(f.pow(u, 6) * b.clone(), *d, "u^6 b, {label}");
+                        }
+                        None => assert!(!x.is_isomorphic(y), "{label}"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_isomorphism_carries_the_group_across() {
+        // u = 2 takes (1, 6) to (2^4, 2^6 * 6) = (5, 10) over F_11.
+        let (f, c) = curve();
+        let other = Curve::new(f.clone(), f.element(5), f.element(10)).expect("nonsingular");
+        let iso = c
+            .isomorphism(&other)
+            .expect("u = 2 carries one to the other");
+
+        let points = all_points(&f, &c);
+        let images: Vec<Point<Fp>> = points.iter().map(|p| iso.evaluate(p)).collect();
+
+        // Onto E'(F_11), and one to one.
+        let targets = all_points(&f, &other);
+        assert_eq!(images.len(), targets.len(), "13 points either side");
+        for (i, image) in images.iter().enumerate() {
+            assert!(targets.contains(image), "{} is not on the codomain", image);
+            assert!(
+                !images[i + 1..].contains(image),
+                "two points share an image"
+            );
+        }
+
+        // And additive, over every pair.
+        for (p, image) in points.iter().zip(&images) {
+            for (q, other_image) in points.iter().zip(&images) {
+                assert_eq!(
+                    iso.evaluate(&(p.clone() + q.clone())),
+                    image.clone() + other_image.clone(),
+                    "additivity at {p}, {q}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_isomorphisms_number_the_automorphisms() {
+        // Aut(E) is mu_k for k of 6, 4 and 2 as j is 0, 1728 and anything else, so
+        // over F_13, where mu_6 is rational, the counts differ; over F_11, where only
+        // mu_2 is, they do not.
+        for (prime, expected) in [(13u32, [6usize, 4, 2]), (11, [2, 2, 2])] {
+            let f = Integers::modulo(prime);
+            let curves = [(0i64, 1i64), (1, 0), (1, 1)].map(|(a, b)| {
+                Curve::new(f.clone(), f.element(a), f.element(b)).expect("nonsingular")
+            });
+            for (c, count) in curves.iter().zip(expected) {
+                let automorphisms = c.isomorphisms(c);
+                assert_eq!(
+                    automorphisms.len(),
+                    count,
+                    "F_{prime}, Aut of {:?}",
+                    c.coefficients()
+                );
+                for (i, iso) in automorphisms.iter().enumerate() {
+                    assert!(
+                        !automorphisms[i + 1..]
+                            .iter()
+                            .any(|other| other.u() == iso.u()),
+                        "F_{prime}: two automorphisms share a u"
+                    );
+                    // Each sends the curve to itself, so every image is a point of it.
+                    for p in all_points(&f, c) {
+                        assert!(Arc::ptr_eq(iso.evaluate(&p).curve(), c));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_inverse_undoes_every_isomorphism() {
+        for prime in [11u32, 13] {
+            let f = Integers::modulo(prime);
+            let curves = all_curves(&f);
+            for (i, x) in curves.iter().enumerate() {
+                for y in curves.iter().skip(i) {
+                    for iso in x.isomorphisms(y) {
+                        let back = iso.inverse();
+                        assert!(Arc::ptr_eq(back.domain(), y), "F_{prime}");
+                        assert!(Arc::ptr_eq(back.codomain(), x), "F_{prime}");
+                        for p in all_points(&f, x) {
+                            assert_eq!(back.evaluate(&iso.evaluate(&p)), p, "F_{prime}, {p}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_twist_becomes_isomorphic_over_the_quadratic_extension() {
+        // 2 is not a square modulo 11, so the twist by it of y^2 = x^3 + x + 6 is
+        // (2^2, 2^3 * 6) = (4, 4), which is not isomorphic to it over F_11.
+        let f = Integers::modulo(11);
+        assert_eq!(f.legendre_symbol(&f.element(2)), -1);
+        let c = Curve::new(f.clone(), f.element(1), f.element(6)).expect("nonsingular");
+        let twist = Curve::new(f.clone(), f.element(4), f.element(4)).expect("nonsingular");
+        assert_eq!(
+            c.j_invariant(),
+            twist.j_invariant(),
+            "a twist shares the j-invariant"
+        );
+        assert!(
+            c.isomorphism(&twist).is_none(),
+            "u would be a square root of 2"
+        );
+
+        // Upstairs the square root is there, and u^2 is the non-square that twisted.
+        let big = crate::finite_fields::finite_field(11, 2);
+        let over = |a: i64, b: i64| {
+            Curve::new(big.clone(), big.from_integer(a), big.from_integer(b)).expect("nonsingular")
+        };
+        let iso = over(1, 6)
+            .isomorphism(&over(4, 4))
+            .expect("twists are isomorphic over the quadratic extension");
+        assert_eq!(big.pow(iso.u(), 2), big.from_integer(2));
+        // Frobenius moves u, so it is not in F_11.
+        assert_ne!(big.pow(iso.u(), 11), iso.u().clone());
     }
 
     /// The order found by trying every pair of coordinates, with no character sums.

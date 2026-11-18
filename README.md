@@ -63,6 +63,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Isogenies** — `curve.isogeny(&generator, order)` by Vélu's formulas: the separable
   isogeny with the given kernel, with its codomain, `evaluate` on points, and `x_map`
   for `r₁` in `F(x)`.
+- **Isomorphisms** — `curve.isomorphism(&other)` finds the `u` of
+  `(x, y) ↦ (u²x, u³y)` over the field itself, `isomorphisms` gives all `gcd(k, q-1)`
+  of them, and `is_isomorphic` answers the question alone.
 
 ### Notation
 
