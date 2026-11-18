@@ -333,10 +333,9 @@ where
     /// `order` to be the order of `generator`. The point at infinity, of order one,
     /// gives the identity map.
     ///
-    /// Nothing checks `order`, and a wrong one runs the sums over the wrong set of
-    /// points, leaving something that is not an isogeny. It need not even be a map
-    /// between curves, so this and [`Isogeny::evaluate`] can both panic, which too
-    /// large an `order` always does.
+    /// # Panics
+    /// If `order` is not the order of `generator`, which walking the kernel settles
+    /// either way: no multiple before the last may be infinity, and the last must be.
     pub fn isogeny(self: &Arc<Self>, generator: &Point<F>, order: usize) -> Isogeny<F>
     where
         F::E: for<'x> MulAssign<&'x F::E>,
@@ -352,7 +351,7 @@ where
             let (x, y) = q
                 .coordinates()
                 .map(|(x, y)| (x.clone(), y.clone()))
-                .expect("the generator reached infinity short of `order`");
+                .expect("the generator's order is smaller than the order given");
             q += generator.clone();
 
             if summands.iter().any(|(seen, _, _)| *seen == x) {
@@ -367,6 +366,11 @@ where
             let u = field.from_integer(4) * y.clone() * y;
             summands.push((x, u, v));
         }
+        // The loop advanced order - 1 times from the generator, so this is order * P.
+        assert!(
+            order > 0 && q.is_infinity(),
+            "the generator's order is larger than {order}"
+        );
 
         let mut v_sum = field.zero();
         let mut w_sum = field.zero();
@@ -1281,8 +1285,8 @@ mod tests {
     }
 
     /// Everything an isogeny of degree `n` with kernel `<generator>` has to satisfy,
-    /// over every point of the domain.
-    fn check_isogeny<F>(c: &Arc<Curve<F>>, generator: &Point<F>, n: usize)
+    /// over every point of the domain. Returns it, for any further checking.
+    fn check_isogeny<F>(c: &Arc<Curve<F>>, generator: &Point<F>, n: usize) -> Isogeny<F>
     where
         F: FiniteField + Clone + fmt::Debug,
         F::E: RingOps + Eq + fmt::Debug + fmt::Display + for<'x> MulAssign<&'x F::E>,
@@ -1302,7 +1306,7 @@ mod tests {
         let kernel: Vec<Point<F>> = (0..n).map(|k| c.multiply(k, generator)).collect();
         let images: Vec<Point<F>> = points.iter().map(|p| iso.evaluate(p)).collect();
 
-        for (p, image) in points.iter().zip(&images) {
+        for (i, (p, image)) in points.iter().zip(&images).enumerate() {
             assert_eq!(
                 image.is_infinity(),
                 kernel.contains(p),
@@ -1311,7 +1315,8 @@ mod tests {
             if let Some((x, y)) = image.coordinates() {
                 assert!(codomain.contains(x, y), "{p} maps off the codomain");
             }
-            for (q, other) in points.iter().zip(&images) {
+            // Additivity is symmetric, so the unordered pairs are enough.
+            for (q, other) in points.iter().zip(&images).skip(i) {
                 assert_eq!(
                     iso.evaluate(&(p.clone() + q.clone())),
                     image.clone() + other.clone(),
@@ -1366,6 +1371,7 @@ mod tests {
                 }
             }
         }
+        iso
     }
 
     #[test]
@@ -1438,10 +1444,37 @@ mod tests {
 
         for n in [2usize, 4] {
             let p = point_of_order(&c, n).unwrap_or_else(|| panic!("a point of order {n}"));
-            let iso = c.isogeny(&p, n);
+            let iso = check_isogeny(&c, &p, n);
             assert!(iso.codomain().is_supersingular(), "degree {n}");
-            assert_eq!(iso.codomain().order(), c.order(), "degree {n}");
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "the generator's order is larger than 7")]
+    fn an_order_too_small_is_rejected() {
+        let (f, c) = curve();
+        // The group has prime order 13, so 7 * P is not infinity.
+        let g = c.point(f.element(2), f.element(7)).expect("on the curve");
+        c.isogeny(&g, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "the generator's order is larger than 0")]
+    fn order_zero_is_rejected() {
+        // Infinity has order one, which leaves nothing for zero to be the order of.
+        let (_, c) = curve();
+        c.isogeny(&c.infinity(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "the generator's order is smaller than the order given")]
+    fn an_order_too_large_is_rejected() {
+        // (1, 0) has order two on y^2 = x^3 - x, so the walk over a kernel of four
+        // reaches infinity halfway.
+        let f = Integers::modulo(11);
+        let c = Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular");
+        let t = c.point(f.element(1), f.element(0)).expect("on the curve");
+        c.isogeny(&t, 4);
     }
 
     #[test]
