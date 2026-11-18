@@ -390,12 +390,12 @@ where
     }
 }
 
-/// A separable isogeny `(x, y) -> (r1(x), y * r2(x))`, as Vélu's formulas give it
-/// from one `(x_Q, u_Q, v_Q)` per point `Q` of `S`, which holds one of each pair
-/// `{Q, -Q}` in the kernel:
+/// A separable isogeny: a homomorphism onto another curve, of the shape
+/// `(x, y) -> (r1(x), y * r2(x))`, whose kernel is the finite subgroup it sends to
+/// infinity.
 ///
-/// - `r1 = x + sum [v_Q/(x - x_Q) + u_Q/(x - x_Q)^2]`
-/// - `r2 = 1 - sum [v_Q/(x - x_Q)^2 + 2 u_Q/(x - x_Q)^3]`, which is `r1'`
+/// Neither rational function is stored, only the summands they are both built from,
+/// one for each point of Vélu's `S`.
 #[derive(Debug)]
 pub struct Isogeny<F>
 where
@@ -428,13 +428,16 @@ where
         self.degree
     }
 
-    /// The `(x_Q, u_Q, v_Q)`, one triple for each `Q` in `S`: `u_Q` is `4y_Q^2`, and
-    /// `v_Q` is `3x_Q^2 + a`, doubled away from the 2-torsion.
+    /// Vélu's `(x_Q, u_Q, v_Q)` for each `Q` in `S`, which holds one of each pair
+    /// `{Q, -Q}` in the kernel: `u_Q` is `4y_Q^2`, and `v_Q` is `3x_Q^2 + a`, doubled
+    /// away from the 2-torsion.
     pub fn summands(&self) -> &[(F::E, F::E, F::E)] {
         &self.summands
     }
 
-    /// The image of `p`, which is infinity exactly on the kernel.
+    /// The image of `p`, which is infinity exactly on the kernel, from
+    /// `r1 = x + sum [v_Q/(x - x_Q) + u_Q/(x - x_Q)^2]` and its derivative
+    /// `r2 = 1 - sum [v_Q/(x - x_Q)^2 + 2 u_Q/(x - x_Q)^3]`.
     pub fn evaluate(&self, p: &Point<F>) -> Point<F> {
         let field = &self.domain.field;
         let Some((x, y)) = p.coordinates() else {
