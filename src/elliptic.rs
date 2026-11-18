@@ -5,8 +5,11 @@
 //! or 3, which this form assumes.
 
 use crate::finite_fields::FiniteField;
+use crate::fractions::Fraction;
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
-use crate::structures::{AdditiveGroup, CommutativeMonoid, Domain, Field, Monoid, RingOps};
+use crate::structures::{
+    AdditiveGroup, CommutativeMonoid, Domain, EuclideanDomain, Field, Monoid, RingOps,
+};
 use num_bigint::{BigInt, Sign};
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub};
@@ -324,6 +327,163 @@ where
         let ring = &self.polynomials;
         let x = ring.indeterminate();
         x.pow(3) + ring.constant(self.a.clone()) * x + ring.constant(self.b.clone())
+    }
+
+    /// The separable isogeny with kernel `<generator>`, by Vélu's formulas, taking
+    /// `order` to be the order of `generator`. The point at infinity, of order one,
+    /// gives the identity map.
+    ///
+    /// # Panics
+    /// If `order` is not the order of `generator`, which walking the kernel settles
+    /// either way: no multiple before the last may be infinity, and the last must be.
+    pub fn isogeny(self: &Arc<Self>, generator: &Point<F>, order: usize) -> Isogeny<F>
+    where
+        F::E: for<'x> MulAssign<&'x F::E>,
+        i64: Mul<F::E, Output = F::E>,
+    {
+        let field = &self.field;
+
+        // One Q from each pair {Q, -Q}, which the x coordinate tells apart, together
+        // with the points of order two, each of which is its own pair.
+        let mut summands: Vec<(F::E, F::E, F::E)> = Vec::new();
+        let mut q = generator.clone();
+        for _ in 1..order {
+            let (x, y) = q
+                .coordinates()
+                .map(|(x, y)| (x.clone(), y.clone()))
+                .expect("the generator's order is smaller than the order given");
+            q += generator.clone();
+
+            if summands.iter().any(|(seen, _, _)| *seen == x) {
+                continue;
+            }
+            let g = field.from_integer(3) * x.clone() * x.clone() + self.a.clone();
+            let v = if field.is_zero(&y) {
+                g
+            } else {
+                field.from_integer(2) * g
+            };
+            let u = field.from_integer(4) * y.clone() * y;
+            summands.push((x, u, v));
+        }
+        // The loop advanced order - 1 times from the generator, so this is order * P.
+        assert!(
+            order > 0 && q.is_infinity(),
+            "the generator's order is larger than {order}"
+        );
+
+        let mut v_sum = field.zero();
+        let mut w_sum = field.zero();
+        for (x, u, v) in &summands {
+            v_sum += v.clone();
+            w_sum += u.clone() + x.clone() * v.clone();
+        }
+        let codomain = Curve::new(
+            field.clone(),
+            self.a.clone() - 5 * v_sum,
+            self.b.clone() - 7 * w_sum,
+        )
+        .expect("the codomain of an isogeny is nonsingular");
+
+        Isogeny {
+            domain: Arc::clone(self),
+            codomain,
+            degree: order,
+            summands,
+        }
+    }
+}
+
+/// A separable isogeny: a homomorphism onto another curve, of the shape
+/// `(x, y) -> (r1(x), y * r2(x))`, whose kernel is the finite subgroup it sends to
+/// infinity.
+///
+/// Neither rational function is stored, only the summands they are both built from,
+/// one for each point of Vélu's `S`.
+#[derive(Debug)]
+pub struct Isogeny<F>
+where
+    F: Field + Clone,
+    F::E: RingOps + Eq,
+{
+    domain: Arc<Curve<F>>,
+    codomain: Arc<Curve<F>>,
+    degree: usize,
+    summands: Vec<(F::E, F::E, F::E)>,
+}
+
+impl<F> Isogeny<F>
+where
+    F: Field + Clone,
+    F::E: RingOps + Eq,
+{
+    pub fn domain(&self) -> &Arc<Curve<F>> {
+        &self.domain
+    }
+
+    /// The curve the isogeny maps onto, as a handle of its own even when it has the
+    /// same coefficients as the domain.
+    pub fn codomain(&self) -> &Arc<Curve<F>> {
+        &self.codomain
+    }
+
+    /// The degree, which is the order of the kernel.
+    pub fn degree(&self) -> usize {
+        self.degree
+    }
+
+    /// Vélu's `(x_Q, u_Q, v_Q)` for each `Q` in `S`, which holds one of each pair
+    /// `{Q, -Q}` in the kernel: `u_Q` is `4y_Q^2`, and `v_Q` is `3x_Q^2 + a`, doubled
+    /// away from the 2-torsion.
+    pub fn summands(&self) -> &[(F::E, F::E, F::E)] {
+        &self.summands
+    }
+
+    /// The image of `p`, which is infinity exactly on the kernel, from
+    /// `r1 = x + sum [v_Q/(x - x_Q) + u_Q/(x - x_Q)^2]` and its derivative
+    /// `r2 = 1 - sum [v_Q/(x - x_Q)^2 + 2 u_Q/(x - x_Q)^3]`.
+    pub fn evaluate(&self, p: &Point<F>) -> Point<F> {
+        let field = &self.domain.field;
+        let Some((x, y)) = p.coordinates() else {
+            return self.codomain.infinity();
+        };
+        let two = field.from_integer(2);
+
+        let mut r1 = x.clone();
+        let mut r2 = field.identity();
+        for (x_q, u, v) in &self.summands {
+            let Some(inverse) = field.invert(&(x.clone() - x_q.clone())) else {
+                // The kernel is exactly where one of the summands has a pole.
+                return self.codomain.infinity();
+            };
+            let square = inverse.clone() * inverse.clone();
+            let cube = square.clone() * inverse.clone();
+            r1 = r1 + v.clone() * inverse + u.clone() * square.clone();
+            r2 = r2 - v.clone() * square - two.clone() * u.clone() * cube;
+        }
+
+        self.codomain
+            .point(r1, y.clone() * r2)
+            .expect("Vélu's formulas land on the codomain")
+    }
+
+    /// `r1` as an element of `F(x)`, in lowest terms, so that its denominator is of
+    /// degree `n - 1` and vanishes exactly on the kernel.
+    ///
+    /// The `y` coordinate needs no second map: `r2` is the derivative of this.
+    pub fn x_map(&self) -> Fraction<Arc<PolynomialRing<F>>> {
+        let ring = self.domain.polynomials();
+        let functions = ring.fractions();
+        let x = ring.indeterminate();
+
+        let mut r1 = functions.fraction(x.clone(), ring.identity());
+        for (x_q, u, v) in &self.summands {
+            let d = x.clone() - ring.constant(x_q.clone());
+            r1 = r1
+                + functions.fraction(ring.constant(v.clone()), d.clone())
+                + functions.fraction(ring.constant(u.clone()), d.clone() * d);
+        }
+        r1
     }
 }
 
@@ -1085,6 +1245,255 @@ mod tests {
         for x in [0i64, 1, 10] {
             assert!(f.is_zero(&two_torsion.cubic().evaluate(&f.element(x))));
         }
+    }
+
+    /// The formal derivative, which is what `r2` has to agree with.
+    fn derivative<F>(ring: &Arc<PolynomialRing<F>>, p: &Polynomial<F>) -> Polynomial<F>
+    where
+        F: Field + Clone,
+        F::E: RingOps + Eq,
+    {
+        let field = ring.coefficients();
+        let coefficients: Vec<F::E> = p
+            .coefficients()
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(i, c)| field.from_integer(i) * c.clone())
+            .collect();
+        ring.element(coefficients)
+    }
+
+    /// A point of order exactly `n`, found by trying every one: `n` kills it and no
+    /// `n / q` for a prime `q` dividing `n` does. The order is what `isogeny` trusts
+    /// the caller for, so the tests work it out for themselves.
+    fn point_of_order<F>(c: &Arc<Curve<F>>, n: usize) -> Option<Point<F>>
+    where
+        F: FiniteField + Clone,
+        F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+    {
+        let primes: Vec<usize> = crate::number_theory::factorise(n)
+            .iter()
+            .map(|(prime, _)| prime.try_into().expect("a factor of n fits where n does"))
+            .collect();
+        affine_points(c).into_iter().find(|p| {
+            c.multiply(n, p).is_infinity()
+                && primes
+                    .iter()
+                    .all(|prime| !c.multiply(n / prime, p).is_infinity())
+        })
+    }
+
+    /// Everything an isogeny of degree `n` with kernel `<generator>` has to satisfy,
+    /// over every point of the domain. Returns it, for any further checking.
+    fn check_isogeny<F>(c: &Arc<Curve<F>>, generator: &Point<F>, n: usize) -> Isogeny<F>
+    where
+        F: FiniteField + Clone + fmt::Debug,
+        F::E: RingOps + Eq + fmt::Debug + fmt::Display + for<'x> MulAssign<&'x F::E>,
+        i64: Mul<F::E, Output = F::E>,
+    {
+        let field = c.field();
+        let iso = c.isogeny(generator, n);
+        let codomain = iso.codomain();
+        assert_eq!(iso.degree(), n);
+        assert!(
+            !field.is_zero(&codomain.discriminant()),
+            "the codomain is singular"
+        );
+
+        let mut points = affine_points(c);
+        points.push(c.infinity());
+        let kernel: Vec<Point<F>> = (0..n).map(|k| c.multiply(k, generator)).collect();
+        let images: Vec<Point<F>> = points.iter().map(|p| iso.evaluate(p)).collect();
+
+        for (i, (p, image)) in points.iter().zip(&images).enumerate() {
+            assert_eq!(
+                image.is_infinity(),
+                kernel.contains(p),
+                "{p} against the kernel"
+            );
+            if let Some((x, y)) = image.coordinates() {
+                assert!(codomain.contains(x, y), "{p} maps off the codomain");
+            }
+            // Additivity is symmetric, so the unordered pairs are enough.
+            for (q, other) in points.iter().zip(&images).skip(i) {
+                assert_eq!(
+                    iso.evaluate(&(p.clone() + q.clone())),
+                    image.clone() + other.clone(),
+                    "additivity at {p}, {q}"
+                );
+            }
+            // The kernel being rational, every fibre is a coset of it.
+            assert_eq!(
+                images.iter().filter(|i| *i == image).count(),
+                n,
+                "the fibre over the image of {p}"
+            );
+        }
+
+        // An isogeny over the base field preserves the number of rational points.
+        assert_eq!(codomain.order(), c.order());
+        assert_eq!(codomain.trace_of_frobenius(), c.trace_of_frobenius());
+
+        let r1 = iso.x_map();
+        let (numerator, denominator) = (r1.numerator(), r1.denominator());
+        assert_eq!(numerator.degree(), Some(n), "deg of the numerator of r1");
+        assert_eq!(
+            denominator.degree(),
+            Some(n - 1),
+            "deg of the kernel polynomial"
+        );
+
+        let ring = c.polynomials();
+        let (d_numerator, d_denominator) =
+            (derivative(ring, numerator), derivative(ring, denominator));
+        for (p, image) in points.iter().zip(&images) {
+            let Some((x, y)) = p.coordinates() else {
+                continue;
+            };
+            let d = denominator.evaluate(x);
+            match image.coordinates() {
+                None => assert!(field.is_zero(&d), "{p} is in the kernel, r1 has no pole"),
+                Some((image_x, image_y)) => {
+                    assert_eq!(
+                        numerator.evaluate(x),
+                        image_x.clone() * d.clone(),
+                        "r1 at {p}"
+                    );
+                    // r2 = r1', cross-multiplied by the square of the denominator.
+                    assert_eq!(
+                        image_y.clone() * d.clone() * d.clone(),
+                        y.clone()
+                            * (d_numerator.evaluate(x) * d.clone()
+                                - numerator.evaluate(x) * d_denominator.evaluate(x)),
+                        "r2 at {p}"
+                    );
+                }
+            }
+        }
+        iso
+    }
+
+    #[test]
+    fn velu_in_degrees_two_three_and_five() {
+        let f = Integers::modulo(11);
+        // The search lands on y^2 = x^3 + 1 for degrees two and three, and on
+        // y^2 = x^3 + x + 7 for five. Degree two is a kernel of 2-torsion, where v_Q
+        // takes its other branch.
+        for n in [2usize, 3, 5] {
+            let (c, p) = all_curves(&f)
+                .into_iter()
+                .find_map(|c| point_of_order(&c, n).map(|p| (c, p)))
+                .unwrap_or_else(|| panic!("no curve over F_11 has a point of order {n}"));
+            check_isogeny(&c, &p, n);
+        }
+    }
+
+    #[test]
+    fn a_two_isogeny_worked_out_by_hand() {
+        // y^2 = x^3 - x over F_11 with kernel {O, (1, 0)}: g_T = 3 + a = 2, taken
+        // through the 2-torsion branch, so v = 2 and u = 0. Then w = x_T * v = 2,
+        // leaving a - 5v = 0 and b - 7w = -14 = 8.
+        let f = Integers::modulo(11);
+        let c = Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular");
+        let t = c.point(f.element(1), f.element(0)).expect("on the curve");
+        let iso = c.isogeny(&t, 2);
+        assert_eq!(
+            iso.codomain().coefficients(),
+            (&f.element(0), &f.element(8))
+        );
+
+        // r1(x) = x + 2/(x - 1) and r2(x) = 1 - 2/(x - 1)^2, so (4, 4) goes to
+        // (4 + 2 * 4, 4 * 2).
+        let image = iso.evaluate(&c.point(f.element(4), f.element(4)).expect("on the curve"));
+        assert_eq!(image.coordinates(), Some((&f.element(1), &f.element(8))));
+    }
+
+    #[test]
+    fn a_three_isogeny_worked_out_by_hand() {
+        // y^2 = x^3 + 1 over F_11 with kernel {O, (0, 1), (0, 10)}, whose two affine
+        // points are a pair, so S is just (0, 1). There g_Q = 3*0 + 0 = 0, leaving
+        // v = 0 and u = 4, so a stays 0 and b becomes 1 - 7*4 = 6.
+        let f = Integers::modulo(11);
+        let c = Curve::new(f.clone(), f.element(0), f.element(1)).expect("nonsingular");
+        let g = c.point(f.element(0), f.element(1)).expect("on the curve");
+        let iso = c.isogeny(&g, 3);
+        assert_eq!(
+            iso.codomain().coefficients(),
+            (&f.element(0), &f.element(6))
+        );
+
+        // r1(x) = x + 4/x^2 and r2(x) = 1 - 8/x^3, so (5, 4) goes to (5 + 4*4, 4*10).
+        let image = iso.evaluate(&c.point(f.element(5), f.element(4)).expect("on the curve"));
+        assert_eq!(image.coordinates(), Some((&f.element(10), &f.element(7))));
+    }
+
+    #[test]
+    fn an_isogeny_of_a_supersingular_curve_is_supersingular() {
+        // y^2 = x^3 + x over F_49, which is supersingular with 64 points, so every
+        // order is a power of two. Degree four holds both a 2-torsion point and a
+        // pair, which exercises both branches of v_Q in one isogeny.
+        let f = crate::finite_fields::finite_field(7, 2);
+        let c = Curve::new(
+            f.clone(),
+            f.element_at(&1u32.into()),
+            f.element_at(&0u32.into()),
+        )
+        .expect("nonsingular");
+        assert!(c.is_supersingular());
+
+        for n in [2usize, 4] {
+            let p = point_of_order(&c, n).unwrap_or_else(|| panic!("a point of order {n}"));
+            let iso = check_isogeny(&c, &p, n);
+            assert!(iso.codomain().is_supersingular(), "degree {n}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "the generator's order is larger than 7")]
+    fn an_order_too_small_is_rejected() {
+        let (f, c) = curve();
+        // The group has prime order 13, so 7 * P is not infinity.
+        let g = c.point(f.element(2), f.element(7)).expect("on the curve");
+        c.isogeny(&g, 7);
+    }
+
+    #[test]
+    #[should_panic(expected = "the generator's order is larger than 0")]
+    fn order_zero_is_rejected() {
+        // Infinity has order one, which leaves nothing for zero to be the order of.
+        let (_, c) = curve();
+        c.isogeny(&c.infinity(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "the generator's order is smaller than the order given")]
+    fn an_order_too_large_is_rejected() {
+        // (1, 0) has order two on y^2 = x^3 - x, so the walk over a kernel of four
+        // reaches infinity halfway.
+        let f = Integers::modulo(11);
+        let c = Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular");
+        let t = c.point(f.element(1), f.element(0)).expect("on the curve");
+        c.isogeny(&t, 4);
+    }
+
+    #[test]
+    fn the_trivial_kernel_gives_the_identity_map() {
+        let (_, c) = curve();
+        let iso = c.isogeny(&c.infinity(), 1);
+
+        assert_eq!(iso.degree(), 1);
+        assert!(iso.summands().is_empty());
+        assert_eq!(iso.codomain().coefficients(), c.coefficients());
+        assert!(iso.evaluate(&c.infinity()).is_infinity());
+        for p in affine_points(&c) {
+            assert_eq!(iso.evaluate(&p).coordinates(), p.coordinates(), "{p}");
+        }
+
+        // r1 = x, of degree one over degree zero.
+        let r1 = iso.x_map();
+        assert_eq!(r1.numerator(), &c.polynomials().indeterminate());
+        assert_eq!(r1.denominator().degree(), Some(0));
     }
 
     #[test]
