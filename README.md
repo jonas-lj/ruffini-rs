@@ -165,6 +165,7 @@ cargo run --release -p ruffini-demos --bin sqrt2          # constructive reals
 cargo run --release -p ruffini-demos --bin hadamard -- 23 # Hadamard matrix of order 92
 cargo run --release -p ruffini-demos --bin aks            # AKS primality test
 cargo run --release -p ruffini-demos --bin shamir         # Shamir secret sharing
+cargo run --release -p ruffini-demos --bin isogeny_graph # supersingular 2-isogeny graph
 ```
 
 ## Build & test
