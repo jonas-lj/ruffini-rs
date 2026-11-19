@@ -32,6 +32,7 @@ pub mod gröbner;
 pub mod integers;
 pub mod interpolation;
 pub mod matrices;
+pub mod montgomery;
 pub mod multivariate;
 pub mod number_theory;
 pub mod polynomials;

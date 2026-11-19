@@ -24,6 +24,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   `Matrix` on its own is any shape.
 - **`Curve`** — elliptic curves `y² = x³ + ax + b` over any field, whose points form an
   additive group; over a finite one, `is_isomorphic` tells a curve from its twists.
+- **`MontgomeryCurve`** — `y² = x³ + Ax² + x`, carrying a point as its `x` alone, in
+  `(X : Z)`, where doubling, differential addition and the ladder never mention `y`;
+  `to_weierstrass` moves to the other model.
 - **`ConstructiveReals`** — computable reals, held as expression trees and evaluated to
   whatever precision is asked of them.
 
