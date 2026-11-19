@@ -352,19 +352,12 @@ where
         return Some(first);
     }
 
-    if let Some(whole) = root(field, &first, k / prime) {
-        return Some(whole);
-    }
-
-    // A dead end: `first` is a prime-th root of a but not a (k/prime)-th power, which
-    // the others among `first` times mu_prime may still be. One of them is, a k-th
-    // root c of a leaving c^(k/prime) among them.
-    //
-    // No field reaches this, for want of a prime root that is a dead end: see the
-    // test below. It stands because which prime root comes back is not something
-    // [`prime_root`] promises.
-    let zeta = root_of_unity(field, prime)?;
-    (1..prime).find_map(|j| root(field, &(first.clone() * field.pow(&zeta, j)), k / prime))
+    // The other prime-th roots, `first` times mu_prime, need not be tried: the one
+    // that comes back always carries the rest of the root. Either every prime-th root
+    // of a k-th power is a (k/prime)-th power, which fails only where prime^(s+1)
+    // divides k, or it divides k, a^t is one, the Sylow walk corrects nothing, and
+    // what comes back is a^d, which is. See the test of that below.
+    root(field, &first, k / prime)
 }
 
 /// An `r`-th root of `a` for a prime `r`, or [`None`] when `a` is not an `r`-th power,
