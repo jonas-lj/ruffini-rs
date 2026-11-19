@@ -6,6 +6,7 @@
 
 use crate::finite_fields::FiniteField;
 use crate::fractions::Fraction;
+use crate::number_theory::factorise;
 use crate::polynomials::{Polynomial, PolynomialRing, RingExt};
 use crate::structures::{
     AdditiveGroup, CommutativeMonoid, Domain, EuclideanDomain, Field, Monoid, RingOps,
@@ -143,6 +144,97 @@ where
             2
         }
     }
+}
+
+impl<F> Isogeny<F>
+where
+    F: FiniteField + Clone,
+    F::E: RingOps + Eq + Div<Output = F::E> + for<'x> MulAssign<&'x F::E>,
+    i64: Mul<F::E, Output = F::E>,
+{
+    /// The dual isogeny, or [`None`] when its kernel has no generator over the field:
+    /// `ker` of the dual is the image of `E[n]`, so the points it needs have to be
+    /// rational.
+    ///
+    /// Everything here is brute force over the rational points, so it is for the small
+    /// fields the rest of the counting is.
+    ///
+    /// # Panics
+    /// If the rational points cannot tell the automorphisms of the domain apart, which
+    /// is when one of them fixes `[n] E(F_q)` pointwise: `[-1]` does whenever that is
+    /// all 2-torsion, as it is for `n = 4` on a curve of type `(Z/8)^2`.
+    pub fn dual(&self) -> Option<Isogeny<F>> {
+        let (domain, codomain) = (self.domain(), self.codomain());
+        let n = self.degree;
+        let points = rational_points(domain);
+
+        // The dual's kernel is the image of E[n], cyclic of order n, so the image of
+        // any n-torsion point of that order generates it.
+        let generator = points.iter().find_map(|q| {
+            let image = self.evaluate(q);
+            (domain.multiply(n, q).is_infinity() && has_order(codomain, &image, n)).then_some(image)
+        })?;
+        let psi = codomain.isogeny(&generator, n);
+
+        // Vélu lands on a curve isomorphic to the domain, and one of the isomorphisms
+        // back makes the composite multiplication by n rather than a twist of it.
+        let mut normaliser = None;
+        for iota in psi.codomain().isomorphisms(domain) {
+            let composes = points
+                .iter()
+                .all(|r| iota.evaluate(&psi.evaluate(&self.evaluate(r))) == domain.multiply(n, r));
+            if composes {
+                assert!(
+                    normaliser.is_none(),
+                    "the rational points cannot tell the automorphisms apart"
+                );
+                normaliser = Some(iota);
+            }
+        }
+        let iota = normaliser.expect("one isomorphism makes the composite [n]");
+        Some(psi.then(iota))
+    }
+}
+
+/// Every point of the curve over its own field, by taking a square root for each `x`
+/// rather than trying every pair.
+fn rational_points<F>(curve: &Arc<Curve<F>>) -> Vec<Point<F>>
+where
+    F: FiniteField + Clone,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let field = curve.field();
+    let order = field.order();
+    let mut points = vec![curve.infinity()];
+    let mut index = BigInt::from(0u32);
+    while index < order {
+        let x = field.element_at(&index);
+        if let Some(y) = field.sqrt(&curve.evaluate(&x)) {
+            if !field.is_zero(&y) {
+                let opposite = field.zero() - y.clone();
+                points.push(curve.point(x.clone(), opposite).expect("the other root"));
+            }
+            points.push(curve.point(x, y).expect("a root of the cubic"));
+        }
+        index += 1u32;
+    }
+    points
+}
+
+/// Whether `p` has order exactly `n`: `n` kills it and no `n / q` for a prime `q`
+/// dividing `n` does.
+fn has_order<F>(curve: &Arc<Curve<F>>, p: &Point<F>, n: usize) -> bool
+where
+    F: Field + Clone,
+    F::E: RingOps + Eq,
+{
+    if !curve.multiply(n, p).is_infinity() {
+        return false;
+    }
+    factorise(n).iter().all(|(prime, _)| {
+        let prime: usize = prime.try_into().expect("a factor of n fits where n does");
+        !curve.multiply(n / prime, p).is_infinity()
+    })
 }
 
 /// An isomorphism `(x, y) -> (u^2 x, u^3 y)`, which away from characteristic 2 and 3
@@ -524,6 +616,7 @@ where
             codomain,
             degree: order,
             summands,
+            post: None,
         }
     }
 }
@@ -544,6 +637,7 @@ where
     codomain: Arc<Curve<F>>,
     degree: usize,
     summands: Vec<(F::E, F::E, F::E)>,
+    post: Option<Isomorphism<F>>,
 }
 
 impl<F> Isogeny<F>
@@ -556,9 +650,47 @@ where
     }
 
     /// The curve the isogeny maps onto, as a handle of its own even when it has the
-    /// same coefficients as the domain.
+    /// same coefficients as the domain, and the post-isomorphism's codomain when there
+    /// is one.
     pub fn codomain(&self) -> &Arc<Curve<F>> {
-        &self.codomain
+        match &self.post {
+            None => &self.codomain,
+            Some(iso) => iso.codomain(),
+        }
+    }
+
+    /// This isogeny and then `iso`, which leaves the degree and the kernel alone.
+    ///
+    /// # Panics
+    /// If `iso` does not start where this lands.
+    pub fn then(self, iso: Isomorphism<F>) -> Isogeny<F> {
+        assert!(
+            Arc::ptr_eq(iso.domain(), self.codomain()),
+            "the isomorphism does not start where the isogeny lands"
+        );
+        let Isogeny {
+            domain,
+            codomain,
+            degree,
+            summands,
+            post,
+        } = self;
+        // Two isomorphisms in a row are the one with the product of their u's.
+        let post = Some(match post {
+            None => iso,
+            Some(first) => Isomorphism {
+                domain: first.domain,
+                codomain: iso.codomain,
+                u: first.u * iso.u,
+            },
+        });
+        Isogeny {
+            domain,
+            codomain,
+            degree,
+            summands,
+            post,
+        }
     }
 
     /// The degree, which is the order of the kernel.
@@ -577,6 +709,15 @@ where
     /// `r1 = x + sum [v_Q/(x - x_Q) + u_Q/(x - x_Q)^2]` and its derivative
     /// `r2 = 1 - sum [v_Q/(x - x_Q)^2 + 2 u_Q/(x - x_Q)^3]`.
     pub fn evaluate(&self, p: &Point<F>) -> Point<F> {
+        let image = self.velu(p);
+        match &self.post {
+            None => image,
+            Some(iso) => iso.evaluate(&image),
+        }
+    }
+
+    /// Vélu's part alone, which lands on the codomain before any post-isomorphism.
+    fn velu(&self, p: &Point<F>) -> Point<F> {
         let field = &self.domain.field;
         let Some((x, y)) = p.coordinates() else {
             return self.codomain.infinity();
@@ -617,7 +758,14 @@ where
                 + functions.fraction(ring.constant(v.clone()), d.clone())
                 + functions.fraction(ring.constant(u.clone()), d.clone() * d);
         }
-        r1
+        match &self.post {
+            None => r1,
+            // The isomorphism takes x to u^2 x.
+            Some(iso) => {
+                let u_squared = iso.u().clone() * iso.u().clone();
+                functions.fraction(ring.constant(u_squared), ring.identity()) * r1
+            }
+        }
     }
 }
 
@@ -1554,16 +1702,7 @@ mod tests {
         F: FiniteField + Clone,
         F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
     {
-        let primes: Vec<usize> = crate::number_theory::factorise(n)
-            .iter()
-            .map(|(prime, _)| prime.try_into().expect("a factor of n fits where n does"))
-            .collect();
-        affine_points(c).into_iter().find(|p| {
-            c.multiply(n, p).is_infinity()
-                && primes
-                    .iter()
-                    .all(|prime| !c.multiply(n / prime, p).is_infinity())
-        })
+        rational_points(c).into_iter().find(|p| has_order(c, p, n))
     }
 
     /// Everything an isogeny of degree `n` with kernel `<generator>` has to satisfy,
@@ -1776,6 +1915,231 @@ mod tests {
         let r1 = iso.x_map();
         assert_eq!(r1.numerator(), &c.polynomials().indeterminate());
         assert_eq!(r1.denominator().degree(), Some(0));
+    }
+
+    /// A supersingular curve over `F_{p^2}` has `(p + 1)^2` points, every one killed
+    /// by `p + 1`, which with that count leaves the group `(Z/(p+1))^2`. So all of
+    /// `E[n]` is rational for every `n` dividing `p + 1`.
+    fn check_the_group_type<F>(curve: &Arc<Curve<F>>, m: usize, name: &str)
+    where
+        F: FiniteField + Clone,
+        F::E: RingOps + Eq + fmt::Display + for<'x> MulAssign<&'x F::E>,
+    {
+        assert!(curve.is_supersingular(), "{name} is not supersingular");
+        let points = rational_points(curve);
+        assert_eq!(points.len(), m * m, "{name}: the point count");
+        for p in &points {
+            assert!(
+                curve.multiply(m, p).is_infinity(),
+                "{name}: {p} outlives {m}"
+            );
+        }
+    }
+
+    /// The dual of an isogeny of degree `n` out of `curve`, against everything but
+    /// `dual . phi = [n]`, which is what picks the isomorphism in the first place.
+    /// `ours` is the domain's rational points, which cost enough to pass in.
+    fn check_dual<F>(
+        curve: &Arc<Curve<F>>,
+        ours: &[Point<F>],
+        n: usize,
+        name: &str,
+    ) -> (Isogeny<F>, Isogeny<F>)
+    where
+        F: FiniteField + Clone + fmt::Debug,
+        F::E: RingOps
+            + Eq
+            + fmt::Debug
+            + fmt::Display
+            + Div<Output = F::E>
+            + for<'x> MulAssign<&'x F::E>,
+        i64: Mul<F::E, Output = F::E>,
+    {
+        let generator = ours
+            .iter()
+            .find(|p| has_order(curve, p, n))
+            .expect("the n-torsion is rational");
+        let phi = curve.isogeny(generator, n);
+        let dual = phi.dual().expect("so is the dual's kernel");
+        let other = phi.codomain();
+
+        assert_eq!(dual.degree(), n, "{name}: the degree");
+        assert!(Arc::ptr_eq(dual.domain(), other), "{name}: the domain");
+        assert!(Arc::ptr_eq(dual.codomain(), curve), "{name}: the codomain");
+
+        // phi . dual = [n] on E', which nothing in the construction asked for.
+        let theirs = rational_points(other);
+        for r in &theirs {
+            assert_eq!(
+                phi.evaluate(&dual.evaluate(r)),
+                other.multiply(n, r),
+                "{name}: phi(dual({r}))"
+            );
+        }
+
+        // The kernel of the dual is the image of the n-torsion, of order n.
+        let kernel: Vec<&Point<F>> = theirs
+            .iter()
+            .filter(|r| dual.evaluate(r).is_infinity())
+            .collect();
+        assert_eq!(kernel.len(), n, "{name}: the kernel");
+        let images: Vec<Point<F>> = ours
+            .iter()
+            .filter(|r| curve.multiply(n, r).is_infinity())
+            .map(|r| phi.evaluate(r))
+            .collect();
+        for point in &kernel {
+            assert!(images.contains(point), "{name}: {point} is not an image");
+        }
+        (phi, dual)
+    }
+
+    /// The dual of the dual is the isogeny itself, which also puts `dual` through an
+    /// isogeny that already carries an isomorphism.
+    fn check_double_dual<F>(phi: &Isogeny<F>, dual: &Isogeny<F>, ours: &[Point<F>], name: &str)
+    where
+        F: FiniteField + Clone + fmt::Debug,
+        F::E: RingOps
+            + Eq
+            + fmt::Debug
+            + fmt::Display
+            + Div<Output = F::E>
+            + for<'x> MulAssign<&'x F::E>,
+        i64: Mul<F::E, Output = F::E>,
+    {
+        let back = dual.dual().expect("the double dual");
+        for r in ours {
+            assert_eq!(back.evaluate(r), phi.evaluate(r), "{name}: at {r}");
+        }
+    }
+
+    #[test]
+    fn an_isogeny_composed_with_isomorphisms() {
+        // y^2 = x^3 - x over F_11 with kernel {O, (1, 0)} lands on y^2 = x^3 + 8, and
+        // u = 2 takes that to y^2 = x^3 + 6, u = 3 on to y^2 = x^3 + 7.
+        let f = Integers::modulo(11);
+        let c = Curve::new(f.clone(), f.element(-1), f.element(0)).expect("nonsingular");
+        let t = c.point(f.element(1), f.element(0)).expect("on the curve");
+        let phi = c.isogeny(&t, 2);
+        let first = Curve::new(f.clone(), f.element(0), f.element(6)).expect("nonsingular");
+        let second = Curve::new(f.clone(), f.element(0), f.element(7)).expect("nonsingular");
+
+        let iota = phi.codomain().isomorphism(&first).expect("u = 2");
+        let points = all_points(&f, &c);
+        let expected: Vec<Point<Fp>> = points
+            .iter()
+            .map(|p| iota.evaluate(&phi.evaluate(p)))
+            .collect();
+
+        let again = phi.codomain().isomorphism(&first).expect("the same u");
+        let composed = phi.then(again);
+        assert_eq!(composed.degree(), 2, "composing leaves the degree alone");
+        assert!(Arc::ptr_eq(composed.codomain(), &first));
+        for (p, image) in points.iter().zip(&expected) {
+            assert_eq!(composed.evaluate(p), *image, "the composite at {p}");
+        }
+
+        // r1 picks up the u^2, which the x coordinates of the images say.
+        let r1 = composed.x_map();
+        let (numerator, denominator) = (r1.numerator(), r1.denominator());
+        for (p, image) in points.iter().zip(&expected) {
+            let Some((x, _)) = p.coordinates() else {
+                continue;
+            };
+            if let Some((target, _)) = image.coordinates() {
+                assert_eq!(
+                    numerator.evaluate(x),
+                    target.clone() * denominator.evaluate(x),
+                    "r1 at {p}"
+                );
+            }
+        }
+
+        // And a second isomorphism multiplies into the first rather than replacing it.
+        let next = first.isomorphism(&second).expect("u = 3");
+        let twice: Vec<Point<Fp>> = expected.iter().map(|q| next.evaluate(q)).collect();
+        let chained = composed.then(first.isomorphism(&second).expect("the same u"));
+        for (p, image) in points.iter().zip(&twice) {
+            assert_eq!(chained.evaluate(p), *image, "the chained composite at {p}");
+        }
+    }
+
+    #[test]
+    fn the_dual_where_j_is_1728() {
+        // y^2 = x^3 + x over F_121: supersingular, 144 points of type (Z/12)^2. j is
+        // 1728, which puts mu_4 in the field, so four isomorphisms have to be told
+        // apart. F_49 would do for that, but n = 4 there leaves 4E all 2-torsion,
+        // where [-1] fixes it and the rational points cannot choose.
+        let f = crate::finite_fields::finite_field(11, 2);
+        let c = Curve::new(f.clone(), f.from_integer(1), f.from_integer(0)).expect("nonsingular");
+        assert_eq!(c.j_invariant(), f.from_integer(1728));
+        check_the_group_type(&c, 12, "F_121");
+        let points = rational_points(&c);
+        for n in [2usize, 4] {
+            let name = format!("F_121 with n = {n}");
+            let (phi, dual) = check_dual(&c, &points, n, &name);
+            check_double_dual(&phi, &dual, &points, &name);
+        }
+    }
+
+    #[test]
+    fn the_dual_where_j_is_zero() {
+        // y^2 = x^3 + 1 over F_121: supersingular, 144 points of type (Z/12)^2, and
+        // j = 0, where the isomorphisms number six.
+        let f = crate::finite_fields::finite_field(11, 2);
+        let c = Curve::new(f.clone(), f.from_integer(0), f.from_integer(1)).expect("nonsingular");
+        assert!(f.is_zero(&c.j_invariant()));
+        check_the_group_type(&c, 12, "F_121");
+        let points = rational_points(&c);
+        let (phi, dual) = check_dual(&c, &points, 3, "F_121 with n = 3");
+        check_double_dual(&phi, &dual, &points, "F_121 with n = 3");
+    }
+
+    #[test]
+    fn the_dual_where_j_is_generic() {
+        // The j = 19 vertex of the 2-isogeny graph over F_529: y^2 = x^3 + 11x + 14i,
+        // supersingular with 576 points of type (Z/24)^2, and j neither 0 nor 1728,
+        // so only mu_2 is in play.
+        let f = crate::finite_fields::finite_field(23, 2);
+        let i = f.element(f.base().indeterminate());
+        let c =
+            Curve::new(f.clone(), f.from_integer(11), f.from_integer(14) * i).expect("nonsingular");
+        assert_eq!(c.j_invariant(), f.from_integer(19));
+        check_the_group_type(&c, 24, "F_529");
+        // The double dual is left to the smaller curves: enumerating 576 points over
+        // F_529 costs a second apiece, and it is the same code either way.
+        let points = rational_points(&c);
+        for n in [2usize, 3] {
+            check_dual(&c, &points, n, &format!("F_529 with n = {n}"));
+        }
+    }
+
+    #[test]
+    fn a_cyclic_two_torsion_leaves_the_dual_without_a_generator() {
+        // One root of the cubic means E[2](F_11) is {O, T}, and T is the kernel, so
+        // the image of the rational 2-torsion is infinity alone.
+        let f = Integers::modulo(11);
+        let (c, t) = all_curves(&f)
+            .into_iter()
+            .find_map(|c| {
+                let roots: Vec<_> = (0..11i64)
+                    .map(|x| f.element(x))
+                    .filter(|x| f.is_zero(&c.evaluate(x)))
+                    .collect();
+                (roots.len() == 1).then(|| {
+                    let t = c
+                        .point(roots[0].clone(), f.element(0))
+                        .expect("on the curve");
+                    (c, t)
+                })
+            })
+            .expect("some curve over F_11 has a single point of order two");
+
+        let phi = c.isogeny(&t, 2);
+        assert!(
+            phi.dual().is_none(),
+            "the dual's kernel has no rational generator"
+        );
     }
 
     #[test]
