@@ -49,9 +49,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Number theory** — `number_theory::factorise`, `totient` and `multiplicative_order`,
   by trial division, sized for the small moduli that turn up as parameters.
 - **Roots** — `field.root(&x, k)` for any `k`, by Adleman, Manders and Miller one prime
-  factor at a time, over any `FiniteField`; `sqrt` is the case `k = 2` and Tonelli and
-  Shanks, `root_of_unity` gives the factor between the roots for a prime `k`, and
-  `legendre_symbol` and `is_kth_power` answer the existence questions on their own.
+  factor at a time, over any `FiniteField`, with `roots` for all `gcd(k, q-1)` of them;
+  `sqrt` is the case `k = 2` and Tonelli and Shanks, `root_of_unity` gives a primitive
+  one, and `legendre_symbol` and `is_kth_power` answer the existence questions alone.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
 - **Point counting** — `curve.order()` over a finite field, by summing the quadratic
