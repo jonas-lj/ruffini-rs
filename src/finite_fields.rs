@@ -417,10 +417,9 @@ where
 /// An `r`-th root of `a` for a prime `r`, or [`None`] when `a` is not an `r`-th power,
 /// by Adleman, Manders and Miller's algorithm.
 ///
-/// Which of the `r` roots comes back is what lets [`root`] recurse on one of them: it
-/// is a `(k/r)`-th power whenever `a` is a `k`-th power, because the Sylow correction
-/// runs only where every `r`-th root would do, and where it would not, `h` is one and
-/// the root is `a^d`. Another algorithm for the same job need not have that property.
+/// The root it returns is a `(k/r)`-th power whenever `a` is a `k`-th power: the Sylow
+/// correction runs only where every `r`-th root is one, and where it would not, `h` is
+/// one and the root is `a^d`.
 ///
 /// # Panics
 /// If `r` is not prime, where one root at a time is not the whole question.
