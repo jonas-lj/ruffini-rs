@@ -48,10 +48,10 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
   multiplication.
 - **Number theory** — `number_theory::factorise`, `totient` and `multiplicative_order`,
   by trial division, sized for the small moduli that turn up as parameters.
-- **Roots** — `field.root(&x, r)` for a prime `r` by Adleman, Manders and Miller, over
-  any `FiniteField`, with `sqrt` the case `r = 2` and Tonelli and Shanks; `root_of_unity`
-  gives the factor between the `r` roots, and `legendre_symbol` and `is_kth_power`
-  answer the existence questions on their own.
+- **Roots** — `field.root(&x, k)` for any `k`, by Adleman, Manders and Miller one prime
+  factor at a time, over any `FiniteField`; `sqrt` is the case `k = 2` and Tonelli and
+  Shanks, `root_of_unity` gives the factor between the roots for a prime `k`, and
+  `legendre_symbol` and `is_kth_power` answer the existence questions on their own.
 - **Elliptic curve arithmetic** — the chord-and-tangent group law and scalar
   multiplication by double-and-add.
 - **Point counting** — `curve.order()` over a finite field, by summing the quadratic
@@ -63,6 +63,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Isogenies** — `curve.isogeny(&generator, order)` by Vélu's formulas: the separable
   isogeny with the given kernel, with its codomain, `evaluate` on points, and `x_map`
   for `r₁` in `F(x)`.
+- **Isomorphisms** — `curve.isomorphism(&other)` finds the `u` of
+  `(x, y) ↦ (u²x, u³y)` over the field itself, `isomorphisms` gives all `gcd(k, q-1)`
+  of them, and `is_isomorphic` answers the question alone.
 
 ### Notation
 
