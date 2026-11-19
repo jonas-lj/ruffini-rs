@@ -173,6 +173,7 @@ cargo run --release -p ruffini-demos --bin hadamard -- 23 # Hadamard matrix of o
 cargo run --release -p ruffini-demos --bin aks            # AKS primality test
 cargo run --release -p ruffini-demos --bin shamir         # Shamir secret sharing
 cargo run --release -p ruffini-demos --bin isogeny_graph # supersingular 2-isogeny graph
+cargo run --release -p ruffini-demos --bin cgl_hash      # the CGL hash
 ```
 
 ## Build & test
