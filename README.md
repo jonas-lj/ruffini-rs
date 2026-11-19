@@ -66,6 +66,9 @@ matrices over `Q(x)`, multivariate polynomials over a quotient ring.
 - **Isomorphisms** — `curve.isomorphism(&other)` finds the `u` of
   `(x, y) ↦ (u²x, u³y)` over the field itself, `isomorphisms` gives all `gcd(k, q-1)`
   of them, and `is_isomorphic` answers the question alone.
+- **Dual isogenies** — `isogeny.dual()` over a finite field, by Vélu on the image of
+  the `n`-torsion and then the isomorphism that makes the composite `[n]`;
+  `isogeny.then(iso)` composes an isomorphism onto an isogeny.
 
 ### Notation
 
