@@ -352,11 +352,6 @@ where
         return Some(first);
     }
 
-    // The other prime-th roots, `first` times mu_prime, need not be tried: the one
-    // that comes back always carries the rest of the root. Either every prime-th root
-    // of a k-th power is a (k/prime)-th power, which fails only where prime^(s+1)
-    // divides k, or it divides k, a^t is one, the Sylow walk corrects nothing, and
-    // what comes back is a^d, which is. See the test of that below.
     root(field, &first, k / prime)
 }
 
@@ -839,10 +834,7 @@ mod tests {
 
     #[test]
     fn the_prime_root_of_a_power_is_never_a_dead_end() {
-        // Why nothing reaches the fallback in `root`: of the prime-th roots of a k-th
-        // power, the one `prime_root` hands back is itself a (k/prime)-th power. Either
-        // all of them are, or the correction that could have moved off the right one is
-        // trivial, a^t being one whenever prime^(s+1) divides k.
+        // What lets `root` keep the prime root it has rather than trying the others.
         for prime in [5u32, 7, 11, 13, 17, 19, 23, 29, 37, 41, 73] {
             let field = Integers::modulo(prime);
             for k in [4u32, 6, 8, 9, 12, 16, 18, 27, 36] {
