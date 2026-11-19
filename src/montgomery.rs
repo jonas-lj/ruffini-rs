@@ -125,9 +125,8 @@ where
 
     /// `P + Q`, which on `x` alone needs `P - Q` as well.
     ///
-    /// # Panics
-    /// Nothing here checks that `difference` really is `P - Q`; with anything else the
-    /// result is another point of the curve and no error.
+    /// Nothing checks that `difference` is `P - Q`. Given anything else this returns
+    /// some other point of the curve rather than failing.
     pub fn differential_add(
         &self,
         p: &XPoint<F>,
