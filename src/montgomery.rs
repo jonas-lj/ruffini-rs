@@ -1,14 +1,13 @@
 //! Montgomery curves `y^2 = x^3 + Ax^2 + x`, with arithmetic on `x` alone.
 //!
-//! The `B` of the general form is fixed at one, which is what CSIDH works with. The
-//! shape is what makes the arithmetic cheap: a point is kept as `(X : Z)` standing for
-//! `x = X/Z`, both of `P` and `-P` at once, and doubling and differential addition
-//! never mention `y`.
+//! The `B` of the general form is taken to be one. What the shape buys is cheap
+//! arithmetic: a point is kept as `(X : Z)` standing for `x = X/Z`, both of `P` and
+//! `-P` at once, and doubling and differential addition never mention `y`.
 //!
 //! That is also why `x` needs no checking. Every `x` in the field is the coordinate of
 //! a point of `E_A` or of its quadratic twist, as `x^3 + Ax^2 + x` is a square or not,
-//! and the same formulas serve both. Sampling a torsion point is then a matter of
-//! picking an `x`, which is how CSIDH finds the points its isogenies need.
+//! and the same formulas serve both, so a point of given order is found by picking an
+//! `x` rather than solving for one.
 
 use crate::elliptic::Curve;
 use crate::structures::{Field, RingOps};
