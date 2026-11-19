@@ -92,9 +92,9 @@ where
         let (a, b) = (&self.a, &self.b);
         let (c, d) = (&other.a, &other.b);
         let u = if f.is_zero(a) {
-            sixth_root(f, &(d.clone() / b.clone()))?
+            f.root(&(d.clone() / b.clone()), 6)?
         } else if f.is_zero(b) {
-            fourth_root(f, &(c.clone() / a.clone()))?
+            f.root(&(c.clone() / a.clone()), 4)?
         } else {
             f.sqrt(&((a.clone() * d.clone()) / (c.clone() * b.clone())))?
         };
@@ -141,32 +141,6 @@ where
             2
         }
     }
-}
-
-/// A fourth root of `v`, or [`None`] when it has none.
-fn fourth_root<F>(field: &F, v: &F::E) -> Option<F::E>
-where
-    F: FiniteField,
-    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
-{
-    let square = field.sqrt(v)?;
-    // Both signs, because which of the two square roots `sqrt` hands back is not
-    // something it promises, and where -1 is not a square only one of them is.
-    field
-        .sqrt(&square)
-        .or_else(|| field.sqrt(&(field.zero() - square.clone())))
-}
-
-/// A sixth root of `v`, or [`None`] when it has none.
-fn sixth_root<F>(field: &F, v: &F::E) -> Option<F::E>
-where
-    F: FiniteField,
-    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
-{
-    // The cube root first: the cube roots of a sixth power differ by an element of
-    // order three, which is a square like every element of odd order, so either cube
-    // root will do and there is no case to split.
-    field.sqrt(&field.root(v, 3)?)
 }
 
 /// The `k`-th roots of unity, for `k` of 2, 4 or 6: `mu_k` is cyclic of order
@@ -1028,27 +1002,6 @@ mod tests {
                         some_u_carries(&f, x, y),
                         "F_{prime}: ({a}, {b}) against ({c}, {d})"
                     );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn fourth_and_sixth_roots_exist_exactly_for_the_powers() {
-        for prime in [5u32, 7, 11, 13, 17, 19, 37] {
-            let f = Integers::modulo(prime);
-            let all: Vec<_> = (0..prime as i64).map(|n| f.element(n)).collect();
-            let fourth: Vec<_> = all.iter().map(|x| f.pow(x, 4)).collect();
-            let sixth: Vec<_> = all.iter().map(|x| f.pow(x, 6)).collect();
-
-            for x in &all {
-                match fourth_root(&f, x) {
-                    Some(r) => assert_eq!(f.pow(&r, 4), *x, "F_{prime}"),
-                    None => assert!(!fourth.contains(x), "F_{prime}: {x} is a fourth power"),
-                }
-                match sixth_root(&f, x) {
-                    Some(r) => assert_eq!(f.pow(&r, 6), *x, "F_{prime}"),
-                    None => assert!(!sixth.contains(x), "F_{prime}: {x} is a sixth power"),
                 }
             }
         }

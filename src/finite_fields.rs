@@ -196,13 +196,13 @@ where
         crate::finite_fields::sqrt(self, x)
     }
 
-    /// An `r`-th root of `x` for a prime `r`. See [`root`], which this forwards to.
-    fn root(&self, x: &Self::E, r: u32) -> Option<Self::E>
+    /// A `k`-th root of `x`. See [`root`], which this forwards to.
+    fn root(&self, x: &Self::E, k: u32) -> Option<Self::E>
     where
         Self: Sized,
         Self::E: for<'a> MulAssign<&'a Self::E>,
     {
-        crate::finite_fields::root(self, x, r)
+        crate::finite_fields::root(self, x, k)
     }
 
     /// A primitive `r`-th root of unity. See [`root_of_unity`], which this forwards to.
@@ -312,7 +312,7 @@ where
 /// A square root of `a`, or [`None`] when `a` is not a square.
 ///
 /// Both roots are `r` and `-r`; this returns whichever the algorithm reaches. Tonelli
-/// and Shanks' algorithm is [`root`] at `r = 2`, which this forwards to.
+/// and Shanks' algorithm is [`root`] at `k = 2`, which this forwards to.
 ///
 /// `F` must really be a field. A quotient by a composite modulus is accepted by the
 /// type and the answer is then unspecified: `Z/15` reports that 4 is not a square,
@@ -325,15 +325,54 @@ where
     root(field, a, 2)
 }
 
-/// An `r`-th root of `a`, or [`None`] when `a` is not an `r`-th power, by Adleman,
-/// Manders and Miller's algorithm.
+/// A `k`-th root of `a`, or [`None`] when `a` is not a `k`-th power.
 ///
-/// There are `r` roots when `r` divides `q - 1` and one otherwise. This returns
-/// whichever the algorithm reaches, and [`root_of_unity`] is the factor between them.
+/// There are `gcd(k, q - 1)` of them, and this returns whichever it reaches first.
+/// [`root_of_unity`] is the factor between them when `k` is prime.
+///
+/// # Panics
+/// If `k` is zero, which no element is a root for.
+pub fn root<F>(field: &F, a: &F::E, k: u32) -> Option<F::E>
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    assert!(k > 0, "a zeroth root is not a useful question");
+    if k == 1 {
+        return Some(a.clone());
+    }
+    if field.is_zero(a) {
+        return Some(field.zero());
+    }
+
+    let (prime, _) = factorise(k).into_iter().next().expect("k is above one");
+    let prime: u32 = prime.try_into().expect("a prime factor of k");
+    let first = prime_root(field, a, prime)?;
+    if prime == k {
+        return Some(first);
+    }
+
+    if let Some(whole) = root(field, &first, k / prime) {
+        return Some(whole);
+    }
+
+    // A dead end: `first` is a prime-th root of a but not a (k/prime)-th power, which
+    // the others among `first` times mu_prime may still be. One of them is, a k-th
+    // root c of a leaving c^(k/prime) among them.
+    //
+    // No field reaches this, for want of a prime root that is a dead end: see the
+    // test below. It stands because which prime root comes back is not something
+    // [`prime_root`] promises.
+    let zeta = root_of_unity(field, prime)?;
+    (1..prime).find_map(|j| root(field, &(first.clone() * field.pow(&zeta, j)), k / prime))
+}
+
+/// An `r`-th root of `a` for a prime `r`, or [`None`] when `a` is not an `r`-th power,
+/// by Adleman, Manders and Miller's algorithm.
 ///
 /// # Panics
 /// If `r` is not prime, where one root at a time is not the whole question.
-pub fn root<F>(field: &F, a: &F::E, r: u32) -> Option<F::E>
+fn prime_root<F>(field: &F, a: &F::E, r: u32) -> Option<F::E>
 where
     F: FiniteField,
     F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
@@ -806,6 +845,49 @@ mod tests {
     }
 
     #[test]
+    fn the_prime_root_of_a_power_is_never_a_dead_end() {
+        // Why nothing reaches the fallback in `root`: of the prime-th roots of a k-th
+        // power, the one `prime_root` hands back is itself a (k/prime)-th power. Either
+        // all of them are, or the correction that could have moved off the right one is
+        // trivial, a^t being one whenever prime^(s+1) divides k.
+        for prime in [5u32, 7, 11, 13, 17, 19, 23, 29, 37, 41, 73] {
+            let field = Integers::modulo(prime);
+            for k in [4u32, 6, 8, 9, 12, 16, 18, 27, 36] {
+                let r: u32 = factorise(k)[0].0.clone().try_into().expect("a small prime");
+                for n in 1..prime as i64 {
+                    let a = field.element(n);
+                    if root(&field, &a, k).is_none() {
+                        continue;
+                    }
+                    let first = prime_root(&field, &a, r).expect("a k-th power is an r-th one");
+                    assert!(
+                        root(&field, &first, k / r).is_some(),
+                        "F_{prime}: the {r}-th root of {n} is a dead end for k = {k}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn composite_roots_exist_exactly_for_the_powers() {
+        for prime in [7u32, 11, 13, 17, 19, 37, 73] {
+            let field = Integers::modulo(prime);
+            // 9 over F_7 is the case the search is there for: 3 divides 6 once, so a
+            // cube root of a ninth power need not be a cube itself.
+            for k in [1u32, 4, 6, 8, 9, 12, 36] {
+                roots_agree_with_powering(&field, k, &format!("F_{prime}"));
+            }
+        }
+        for (p, k) in [(3u32, 2usize), (5, 2), (7, 2)] {
+            let field = finite_field(p, k);
+            for exponent in [4u32, 6, 8, 9] {
+                roots_agree_with_powering(&field, exponent, &format!("F_{p}^{k}"));
+            }
+        }
+    }
+
+    #[test]
     fn prime_roots_in_extension_fields() {
         for (p, k) in [(3u32, 2usize), (5, 2), (7, 2), (2, 3), (2, 4), (3, 3)] {
             let field = finite_field(p, k);
@@ -894,9 +976,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the exponent 4 is not prime")]
-    fn a_composite_exponent_is_rejected() {
-        root(&Integers::modulo(17), &Integers::modulo(17).element(1), 4);
+    #[should_panic(expected = "a zeroth root is not a useful question")]
+    fn a_zeroth_root_is_rejected() {
+        root(&Integers::modulo(17), &Integers::modulo(17).element(1), 0);
     }
 
     #[test]
