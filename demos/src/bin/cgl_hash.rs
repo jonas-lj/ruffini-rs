@@ -2,8 +2,8 @@
 //!
 //! Charles, Goren and Lauter's hash walks the supersingular 2-isogeny graph: each bit
 //! of the input picks one of the two ways onward, and the j-invariant where the walk
-//! stops is the digest. Finding a collision means finding two paths to the same
-//! vertex, which is the hard problem the `isogeny_graph` demo's graph is named for.
+//! stops is the digest. Two inputs collide exactly when their paths meet again, which
+//! is to say when the graph has a cycle, and finding one is the hard problem.
 //!
 //! A step, from a curve `E` and the x-coordinate `x_b` it must not go back through:
 //!
@@ -17,10 +17,11 @@
 //! 4. The unchosen root maps to the kernel of the dual, which is the root the next
 //!    step must not take: going back through it would undo this one.
 //!
-//! Two caveats, since this is the bare construction. The length of the input is not
-//! encoded, so two inputs where one extends the other are not kept apart by anything
-//! here. And the walk starts at `y^2 = x^3 + x`, whose endomorphism ring is known,
-//! which is what a real parameter choice has to avoid.
+//! This is the bare construction, so the length of the input is not encoded. That is
+//! less of a gap than it looks: an input and an extension of it collide only when the
+//! extension's tail is a cycle, which is what the whole thing already rests on. The
+//! start curve is the real caveat, `y^2 = x^3 + x` having a known endomorphism ring,
+//! which is what a parameter choice for use has to avoid.
 //!
 //! Charles, Goren and Lauter, "Cryptographic hash functions from expander graphs",
 //! Journal of Cryptology 22 (2009) 93-113. Run with
@@ -124,7 +125,15 @@ fn main() {
         bitstring(right),
         show(p, &cgl_hash(&start, excluded, left))
     );
-    println!("   which is what a cryptographic p is sized to prevent, not a flaw here");
+
+    // Which is a cycle, read out: the two walks run together until they part, and the
+    // two tails from there are a loop back to one vertex.
+    let shared = left.iter().zip(right).take_while(|(a, b)| a == b).count();
+    let cycle = left.len() + right.len() - 2 * shared;
+    println!(
+        "   they agree for {shared} steps, so this is a cycle of {cycle} steps at the\n\
+         \x20  vertex they part at, which is what a cryptographic p is sized to hide"
+    );
 }
 
 /// The isogenies the bits walk through, each from the codomain of the last.
