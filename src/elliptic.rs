@@ -106,22 +106,28 @@ where
     }
 
     /// Every isomorphism onto `other` over the field itself, which is one of them
-    /// times each root of unity in `mu_k`, and so empty when there is none.
+    /// times each root of unity in `mu_k`, and so none at all when there is none.
+    ///
+    /// The count is `gcd(k, q - 1)`, which is `len` without building any of them.
     ///
     /// # Panics
     /// If the characteristic is 2 or 3, as [`Curve::is_isomorphic`] does.
-    pub fn isomorphisms(self: &Arc<Self>, other: &Arc<Curve<F>>) -> Vec<Isomorphism<F>> {
-        let Some(first) = self.isomorphism(other) else {
-            return Vec::new();
+    pub fn isomorphisms(
+        self: &Arc<Self>,
+        other: &Arc<Curve<F>>,
+    ) -> impl ExactSizeIterator<Item = Isomorphism<F>> {
+        let us: Vec<F::E> = match self.isomorphism(other) {
+            Some(first) => roots_of_unity(&self.field, self.automorphism_degree())
+                .map(|zeta| first.u.clone() * zeta)
+                .collect(),
+            None => Vec::new(),
         };
-        roots_of_unity(&self.field, self.automorphism_degree())
-            .into_iter()
-            .map(|zeta| Isomorphism {
-                domain: Arc::clone(self),
-                codomain: Arc::clone(other),
-                u: first.u.clone() * zeta,
-            })
-            .collect()
+        let (domain, codomain) = (Arc::clone(self), Arc::clone(other));
+        us.into_iter().map(move |u| Isomorphism {
+            domain: Arc::clone(&domain),
+            codomain: Arc::clone(&codomain),
+            u,
+        })
     }
 
     /// The `k` with `Aut(E) = mu_k`: 6 where `j` is 0, 4 where it is 1728, and 2
@@ -165,9 +171,9 @@ where
 
 /// The `k`-th roots of unity, for `k` of 2, 4 or 6: `mu_k` is cyclic of order
 /// `gcd(k, q - 1)`, which away from characteristic two is 2, 4 or 6 again.
-fn roots_of_unity<F>(field: &F, k: u32) -> Vec<F::E>
+fn roots_of_unity<F>(field: &F, k: u32) -> impl ExactSizeIterator<Item = F::E>
 where
-    F: FiniteField,
+    F: FiniteField + Clone,
     F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
 {
     let one = field.identity();
@@ -181,7 +187,8 @@ where
         6 => field.zero() - field.root_of_unity(3).expect("3 divides q - 1"),
         _ => panic!("mu_{k} has {order} elements, which no odd order allows"),
     };
-    (0..order).map(|j| field.pow(&generator, j)).collect()
+    let field = field.clone();
+    (0..order).map(move |j| field.pow(&generator, j))
 }
 
 /// An isomorphism `(x, y) -> (u^2 x, u^3 y)`, which away from characteristic 2 and 3
@@ -1120,7 +1127,8 @@ mod tests {
                 Curve::new(f.clone(), f.element(a), f.element(b)).expect("nonsingular")
             });
             for (c, count) in curves.iter().zip(expected) {
-                let automorphisms = c.isomorphisms(c);
+                assert_eq!(c.isomorphisms(c).len(), count, "F_{prime}, a count");
+                let automorphisms: Vec<_> = c.isomorphisms(c).collect();
                 assert_eq!(
                     automorphisms.len(),
                     count,
