@@ -117,7 +117,9 @@ where
         other: &Arc<Curve<F>>,
     ) -> impl ExactSizeIterator<Item = Isomorphism<F>> {
         let us: Vec<F::E> = match self.isomorphism(other) {
-            Some(first) => roots_of_unity(&self.field, self.automorphism_degree())
+            Some(first) => self
+                .field
+                .roots(&self.field.identity(), self.automorphism_degree())
                 .map(|zeta| first.u.clone() * zeta)
                 .collect(),
             None => Vec::new(),
@@ -141,28 +143,6 @@ where
             2
         }
     }
-}
-
-/// The `k`-th roots of unity, for `k` of 2, 4 or 6: `mu_k` is cyclic of order
-/// `gcd(k, q - 1)`, which away from characteristic two is 2, 4 or 6 again.
-fn roots_of_unity<F>(field: &F, k: u32) -> impl ExactSizeIterator<Item = F::E>
-where
-    F: FiniteField + Clone,
-    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
-{
-    let one = field.identity();
-    let order = crate::number_theory::gcd(k, field.order() - 1u32);
-    let order: u32 = order.try_into().expect("a divisor of 6");
-    let generator = match order {
-        2 => field.zero() - one.clone(),
-        4 => field
-            .sqrt(&(field.zero() - one.clone()))
-            .expect("4 divides q - 1, so -1 is a square"),
-        6 => field.zero() - field.root_of_unity(3).expect("3 divides q - 1"),
-        _ => panic!("mu_{k} has {order} elements, which no odd order allows"),
-    };
-    let field = field.clone();
-    (0..order).map(move |j| field.pow(&generator, j))
 }
 
 /// An isomorphism `(x, y) -> (u^2 x, u^3 y)`, which away from characteristic 2 and 3

@@ -205,13 +205,22 @@ where
         crate::finite_fields::root(self, x, k)
     }
 
-    /// A primitive `r`-th root of unity. See [`root_of_unity`], which this forwards to.
-    fn root_of_unity(&self, r: u32) -> Option<Self::E>
+    /// Every `k`-th root of `x`. See [`roots`], which this forwards to.
+    fn roots(&self, x: &Self::E, k: u32) -> impl ExactSizeIterator<Item = Self::E>
+    where
+        Self: Sized + Clone,
+        Self::E: for<'a> MulAssign<&'a Self::E>,
+    {
+        crate::finite_fields::roots(self, x, k)
+    }
+
+    /// A primitive `k`-th root of unity. See [`root_of_unity`], which this forwards to.
+    fn root_of_unity(&self, k: u32) -> Option<Self::E>
     where
         Self: Sized,
         Self::E: for<'a> MulAssign<&'a Self::E>,
     {
-        crate::finite_fields::root_of_unity(self, r)
+        crate::finite_fields::root_of_unity(self, k)
     }
 }
 
@@ -355,8 +364,62 @@ where
     root(field, &first, k / prime)
 }
 
+/// Every `k`-th root of `a`, which is [`root`] times the `k`-th roots of unity: as many
+/// as `gcd(k, q - 1)` of them, the one [`root`] returns first, and none at all when `a`
+/// is not a `k`-th power.
+///
+/// # Panics
+/// If `k` is zero, which no element is a root for.
+pub fn roots<F>(field: &F, a: &F::E, k: u32) -> impl ExactSizeIterator<Item = F::E>
+where
+    F: FiniteField + Clone,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let (first, count) = match root(field, a, k) {
+        None => (field.zero(), 0),
+        // Zero is its own only root, the roots of unity notwithstanding.
+        Some(first) if field.is_zero(&first) => (first, 1),
+        Some(first) => {
+            let count = gcd(k, field.order() - 1u32);
+            (first, count.try_into().expect("a divisor of k"))
+        }
+    };
+    let zeta = if count > 1 {
+        primitive_root_of_unity(field, count)
+    } else {
+        field.identity()
+    };
+
+    let field = field.clone();
+    (0..count).map(move |j| first.clone() * field.pow(&zeta, j))
+}
+
+/// An element of order exactly `d`, which has to divide `q - 1`.
+///
+/// One factor per prime power in `d`, whose orders are coprime and so multiply.
+fn primitive_root_of_unity<F>(field: &F, d: u32) -> F::E
+where
+    F: FiniteField,
+    F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
+{
+    let order = field.order() - 1u32;
+    debug_assert!((&order % d).is_zero(), "{d} divides q - 1");
+    let mut generator = field.identity();
+    for (prime, multiplicity) in factorise(d) {
+        // A non-prime-th power raised to (q - 1)/prime^e has order exactly prime^e.
+        let power = prime.pow(multiplicity);
+        let prime: u32 = prime.try_into().expect("a prime factor of d");
+        generator *= field.pow(&non_power(field, prime), &order / power);
+    }
+    generator
+}
+
 /// An `r`-th root of `a` for a prime `r`, or [`None`] when `a` is not an `r`-th power,
 /// by Adleman, Manders and Miller's algorithm.
+///
+/// The root it returns is a `(k/r)`-th power whenever `a` is a `k`-th power: the Sylow
+/// correction runs only where every `r`-th root is one, and where it would not, `h` is
+/// one and the root is `a^d`.
 ///
 /// # Panics
 /// If `r` is not prime, where one root at a time is not the whole question.
@@ -451,24 +514,20 @@ where
     Some(root)
 }
 
-/// A primitive `r`-th root of unity, or [`None`] when the field holds none: `F*` is
-/// cyclic of order `q - 1`, so one exists exactly when `r` divides `q - 1`.
+/// A primitive `k`-th root of unity, or [`None`] when the field holds none: `F*` is
+/// cyclic of order `q - 1`, so one exists exactly when `k` divides `q - 1`.
 ///
 /// # Panics
-/// If `r` is not prime, where a non-`r`-th power need not be primitive.
-pub fn root_of_unity<F>(field: &F, r: u32) -> Option<F::E>
+/// If `k` is zero, which nothing is a root of unity for.
+pub fn root_of_unity<F>(field: &F, k: u32) -> Option<F::E>
 where
     F: FiniteField,
     F::E: RingOps + Eq + for<'x> MulAssign<&'x F::E>,
 {
-    assert_prime(r);
-    let order = field.order() - 1u32;
-    if !(&order % r).is_zero() {
-        return None;
-    }
-    // A non-r-th power raised to (q - 1)/r is an r-th root of unity other than one,
-    // and r being prime leaves nothing between that and primitive.
-    Some(field.pow(&non_power(field, r), &order / r))
+    assert!(k > 0, "a zeroth root of unity is not a useful question");
+    (&(field.order() - 1u32) % k)
+        .is_zero()
+        .then(|| primitive_root_of_unity(field, k))
 }
 
 /// An element that is not an `r`-th power, by trying every one in turn.
@@ -967,9 +1026,84 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the exponent 1 is not prime")]
-    fn a_root_of_unity_needs_a_prime_too() {
-        root_of_unity(&Integers::modulo(17), 1);
+    #[should_panic(expected = "a zeroth root of unity is not a useful question")]
+    fn a_zeroth_root_of_unity_is_rejected() {
+        root_of_unity(&Integers::modulo(17), 0);
+    }
+
+    #[test]
+    fn a_root_of_unity_has_the_order_asked_for_and_no_less() {
+        for prime in [7u32, 11, 13, 17, 19, 37, 73] {
+            let field = Integers::modulo(prime);
+            let order = prime - 1;
+            for k in 1..=24u32 {
+                match root_of_unity(&field, k) {
+                    Some(zeta) => {
+                        assert_eq!(order % k, 0, "F_{prime}: {k} does not divide {order}");
+                        assert_eq!(field.pow(&zeta, k), field.identity(), "F_{prime}, k = {k}");
+                        // Primitive, so no maximal proper divisor of k kills it either.
+                        for (p, _) in factorise(k) {
+                            let p: u32 = p.try_into().expect("a small prime");
+                            assert_ne!(
+                                field.pow(&zeta, k / p),
+                                field.identity(),
+                                "F_{prime}: a root of unity of order {}, not {k}",
+                                k / p
+                            );
+                        }
+                    }
+                    None => assert_ne!(order % k, 0, "F_{prime}: {k} divides {order}"),
+                }
+            }
+        }
+    }
+
+    /// `roots` against the solutions of `x^k = a` found by trying every element.
+    fn roots_agree_with_trying_everything<F>(field: &F, k: u32, name: &str)
+    where
+        F: FiniteField + Clone,
+        F::E: RingOps + Eq + std::fmt::Debug + for<'x> MulAssign<&'x F::E>,
+    {
+        let all = elements(field);
+        for a in &all {
+            let found: Vec<F::E> = roots(field, a, k).collect();
+            let brute: Vec<F::E> = all
+                .iter()
+                .filter(|x| field.pow(*x, k) == *a)
+                .cloned()
+                .collect();
+
+            assert_eq!(found.len(), brute.len(), "{name}, k = {k}");
+            assert_eq!(
+                roots(field, a, k).len(),
+                brute.len(),
+                "{name}: the count alone"
+            );
+            for x in &brute {
+                assert!(found.contains(x), "{name}: a root was missed, k = {k}");
+            }
+            assert_eq!(
+                found.first(),
+                root(field, a, k).as_ref(),
+                "{name}: the first"
+            );
+        }
+    }
+
+    #[test]
+    fn roots_are_every_one_of_them_and_root_is_the_first() {
+        for prime in [5u32, 7, 11, 13, 17, 19, 37] {
+            let field = Integers::modulo(prime);
+            for k in [1u32, 2, 3, 4, 6, 8, 9, 12] {
+                roots_agree_with_trying_everything(&field, k, &format!("F_{prime}"));
+            }
+        }
+        for (p, degree) in [(3u32, 2usize), (5, 2), (2, 3)] {
+            let field = finite_field(p, degree);
+            for k in [1u32, 2, 3, 4, 6, 8] {
+                roots_agree_with_trying_everything(&field, k, &format!("F_{p}^{degree}"));
+            }
+        }
     }
 
     #[test]
