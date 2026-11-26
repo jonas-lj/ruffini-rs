@@ -25,6 +25,7 @@ pub mod euclidean;
 pub mod evaluation;
 pub mod fft;
 pub mod finite_fields;
+pub mod fixed_fields;
 pub mod fractions;
 // Rust will not infer a file name for a non-ascii module (E0754), so it is spelled out.
 #[path = "gröbner.rs"]
