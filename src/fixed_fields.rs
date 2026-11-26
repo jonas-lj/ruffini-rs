@@ -8,8 +8,8 @@
 //!
 //! Elements are kept in Montgomery form, as `x * 2^256 mod n`, where a product
 //! reduces with no division at all. The form is an implementation detail:
-//! [`crate::structures::Domain::element`] takes an ordinary integer and [`Display`]
-//! prints one.
+//! [`crate::structures::Domain::element`] takes an ordinary integer and
+//! [`std::fmt::Display`] prints one.
 //!
 //! A new field is a modulus and nothing else, the two constants Montgomery's method
 //! needs being derived from it:
@@ -59,7 +59,7 @@ pub trait Prime {
 
 /// `-n^{-1} mod 2^64`, by Newton's iteration on `x -> x(2 - nx)`, which doubles the
 /// number of correct bits and so needs six rounds from the one bit that `x = 1` has.
-pub const fn inverse_of_the_least_limb(modulus: u64) -> u64 {
+const fn inverse_of_the_least_limb(modulus: u64) -> u64 {
     assert!(modulus % 2 == 1, "the modulus has to be odd");
     let mut inverse: u64 = 1;
     let mut rounds = 0;
@@ -72,7 +72,7 @@ pub const fn inverse_of_the_least_limb(modulus: u64) -> u64 {
 
 /// `2^512 mod n`, by doubling one 512 times, which needs nothing wider than the
 /// modulus itself.
-pub const fn radix_squared(modulus: [u64; LIMBS]) -> [u64; LIMBS] {
+const fn radix_squared(modulus: [u64; LIMBS]) -> [u64; LIMBS] {
     let mut value = [1, 0, 0, 0];
     let mut doublings = 0;
     while doublings < 128 * LIMBS {
